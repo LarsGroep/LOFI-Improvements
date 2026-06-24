@@ -113,8 +113,9 @@ def render_validation(artist_id: str, name: str, profile: dict,
 
     status = compliance_status()
     if status["mode"] == "live":
-        st.caption(f"AI live — {status['model']}, region {status['inference_geo']}, "
-                   "web search on. Grounded in LOFI's ticketing history.")
+        st.caption(f"AI live — {status['model']}, region {status['inference_geo']}. "
+                   "Numbers grounded in LOFI's ticketing history; web search "
+                   "optional (toggle below).")
     else:
         st.caption(f"Preview mode — {status['reason']}. Set LOFI_LLM_ENABLED for a "
                    "real, web-grounded validation.")
@@ -125,16 +126,25 @@ def render_validation(artist_id: str, name: str, profile: dict,
         "correction)", key=f"val_note_{artist_id}",
         placeholder="e.g. sold ~300 at BRET last year · switching agency soon")
 
-    run = st.button("Run AI validation", key=f"val_run_{artist_id}",
-                    type="primary")
+    ctrl = st.columns([1, 2])
+    use_web = ctrl[1].checkbox(
+        "🔍 Use web search", value=True, key=f"val_web_{artist_id}",
+        help="Search the web for reputation / residencies / releases — especially "
+             "useful for DJ-led artists with thin streaming data. Off = reason on "
+             "LOFI + Chartmetric data only (cheaper, nothing leaves).")
+    run = ctrl[0].button("Run AI validation", key=f"val_run_{artist_id}",
+                         type="primary")
     if run:
-        with st.spinner("Reasoning over LOFI history + web…"):
+        spinner = ("Reasoning over LOFI history + web…" if use_web
+                   else "Reasoning over LOFI history…")
+        with st.spinner(spinner):
             try:
                 view = build_validation_view(
                     artist_id, name, profile, ml, ext=ext, ra_df=ra_df,
                     pf_data=pf_data, vdf=vdf, nl_score=nl_score)
                 store[artist_id] = {
-                    "result": validate_artist(view, booker_note=note.strip() or None),
+                    "result": validate_artist(view, booker_note=note.strip() or None,
+                                              use_web=use_web),
                     "note": note.strip()}
                 if note.strip():           # log the booker note for the loop
                     try:

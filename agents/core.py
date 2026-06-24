@@ -383,7 +383,7 @@ _VALIDATION_CONTRACT = """Return ONLY one valid JSON object, no prose around it:
 }"""
 
 
-def _validation_system(view: dict) -> str:
+def _validation_system(view: dict, use_web: bool = True) -> str:
     allowed = bool((view.get("grounding") or {}).get("ticket_estimate_allowed"))
     lines = [
         "You are a senior LOFI booker / A&R deciding whether to book ONE artist "
@@ -422,17 +422,30 @@ def _validation_system(view: dict) -> str:
         "- sell_through is a bucket (low/medium/high) tied to the occupancy_rate "
         "of the comparables — not a number you invent.",
         "",
-        "WEB SEARCH (<=4 searches): use it to check recent/upcoming releases, "
-        "residencies, Boiler Room / RA Podcast / Essential Mix, agency/label, "
-        "notable recent bookings, and scene buzz — ESPECIALLY when the data is "
-        "thin or the artist is DJ-led (this fixes the low-digital-footprint blind "
-        "spot). Put every web-sourced claim in web_context with its URL.",
-        "- Search queries may contain ONLY the artist's public name and public "
-        "scene context (genre, city, venue names). NEVER put LOFI's internal data "
-        "into a web query — no fees/gages, ticket counts, occupancy, booker "
-        "feedback, or comparable-event economics. Those stay inside this reasoning "
-        "only.",
-        "",
+    ]
+    if use_web:
+        lines += [
+            "WEB SEARCH (<=4 searches): use it to check recent/upcoming releases, "
+            "residencies, Boiler Room / RA Podcast / Essential Mix, agency/label, "
+            "notable recent bookings, and scene buzz — ESPECIALLY when the data is "
+            "thin or the artist is DJ-led (this fixes the low-digital-footprint "
+            "blind spot). Put every web-sourced claim in web_context with its URL.",
+            "- Search queries may contain ONLY the artist's public name and public "
+            "scene context (genre, city, venue names). NEVER put LOFI's internal "
+            "data into a web query — no fees/gages, ticket counts, occupancy, "
+            "booker feedback, or comparable-event economics. Those stay inside this "
+            "reasoning only.",
+            "",
+        ]
+    else:
+        lines += [
+            "WEB SEARCH is OFF for this run: reason only from the provided LOFI + "
+            "Chartmetric data, set web_context to [], and note in missing_data "
+            "where web reputation would have sharpened the call (e.g. a DJ-led "
+            "artist with thin streaming data).",
+            "",
+        ]
+    lines += [
         "Honesty: never invent tickets, fees, comparable names, or facts. A high "
         "growth score with a negative forecast is trending-then-cooling — name it. "
         "If the genre is off tech-house/house/techno, flag a possible wrong "
@@ -500,13 +513,15 @@ def _mock_validation(view: dict) -> dict:
     }
 
 
-def validate_artist(view: dict, booker_note: str | None = None) -> dict:
-    """Single web-search-grounded validation call → structured verdict.
+def validate_artist(view: dict, booker_note: str | None = None,
+                    use_web: bool = True) -> dict:
+    """Single grounded validation call → structured verdict.
 
     MOCK mode returns a labelled placeholder (UI stays visualisable). LIVE mode
-    enables web search, parses the JSON the model returns, attaches the real web
-    citations, and enforces the trust-first rule in code: no ticket number unless
-    the artist has LOFI history or >=3 comparable events."""
+    parses the JSON the model returns, attaches the real web citations, and
+    enforces the trust-first rule in code: no ticket number unless the artist has
+    LOFI history or >=3 comparable events. `use_web` toggles the web-search tool
+    (off = reason on LOFI + Chartmetric data only, cheaper, no external query)."""
     if not is_live():
         return _mock_validation(view)
 
@@ -517,8 +532,11 @@ def validate_artist(view: dict, booker_note: str | None = None) -> dict:
     messages = [{"role": "user", "content": user}]
     resp = None
     for _ in range(4):  # tolerate web-search pause_turn continuations
-        resp = _create(max_tokens=3000, system=_validation_system(view),
-                       tools=[_WEB_SEARCH_TOOL], messages=messages)
+        kwargs = dict(max_tokens=3000,
+                      system=_validation_system(view, use_web), messages=messages)
+        if use_web:
+            kwargs["tools"] = [_WEB_SEARCH_TOOL]
+        resp = _create(**kwargs)
         if getattr(resp, "stop_reason", None) == "refusal":
             raise RuntimeError(f"Claude refused the request: {resp.stop_details}")
         if getattr(resp, "stop_reason", None) == "pause_turn":
@@ -544,6 +562,56 @@ def validate_artist(view: dict, booker_note: str | None = None) -> dict:
         result["ticket_estimate"] = None
         result["ticket_basis"] = "insufficient"
     return result
+
+
+# ── Compare 2-3 artists (head-to-head, prose) ────────────────────────────────
+
+def _compare_system() -> str:
+    return "\n".join([
+        "You are a senior LOFI booker comparing artists head-to-head for a "
+        "booking decision (tech-house / house / techno, Amsterdam).",
+        _lang_line(),
+        "Classify each as producer-led or DJ-led and weight signals accordingly "
+        "(DJ-led artists are underestimated by digital metrics).",
+        "Compare them on: LOFI sound-fit, draw / market position, momentum vs "
+        "trajectory (a high growth score with a negative forecast is "
+        "trending-then-cooling — say so), and risk. Use ONLY the provided data; "
+        "never invent numbers or names.",
+        "Be concise: a short head-to-head, then a clear RANKED recommendation "
+        "(who to prioritise and why), and one line on what extra data would "
+        "change it.",
+        "",
+        _taxonomy_block(),
+    ])
+
+
+def compare_artists(candidates: list[dict]) -> str:
+    """Head-to-head booking comparison of 2-3 artists → markdown text.
+
+    MOCK mode returns a deterministic side-by-side so the UI stays visualisable;
+    LIVE mode asks Claude for a booker's comparison + ranked recommendation."""
+    views = [to_model_view(c) for c in candidates]
+    if not is_live():
+        out = ["**Preview mode** — enable LOFI_LLM_ENABLED for an AI comparison. "
+               "Data-driven snapshot:"]
+        for c, v in zip(candidates, views):
+            s = v["scores"]
+            fc = v.get("forecast_90d")
+            out.append(
+                f"- **{v['name']}** ({', '.join((v.get('genres') or [])[:2]) or '—'})"
+                f" — scout {c.get('rank', '—')}, momentum {s['momentum']}, growth "
+                f"{s['growth']}, potential {s['future_potential']}, forecast "
+                f"{'—' if fc is None else f'{fc:+.0f}%'}")
+        return "\n".join(out)
+
+    user = ("Compare these artists for a LOFI booking decision. Artists (JSON):\n"
+            + json.dumps(views, ensure_ascii=False, default=list))
+    resp = _create(max_tokens=2000, system=_compare_system(),
+                   messages=[{"role": "user", "content": user}])
+    if getattr(resp, "stop_reason", None) == "refusal":
+        raise RuntimeError(f"Claude refused the request: {resp.stop_details}")
+    return "".join(b.text for b in resp.content
+                   if getattr(b, "type", "") == "text").strip()
 
 
 # ── Per-artist chat (streaming) ──────────────────────────────────────────────
