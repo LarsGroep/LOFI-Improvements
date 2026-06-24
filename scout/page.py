@@ -461,6 +461,12 @@ def render_scout_page() -> None:
         st.warning("No unbooked artists found.")
         return
 
+    # rank_candidates attaches `rank` + `waarom` in place; run it once over the
+    # whole pool (no filters) so every candidate has them before the genre flow
+    # and the Compare tab read them.
+    rank_candidates(candidates, taxonomy, min_confidence=0,
+                    drop_disqualified=False, core_only=False)
+
     by_name: dict[str, dict] = {}
     for c in candidates:
         by_name.setdefault(c["artist_name"], c)  # first wins on rare name clashes
