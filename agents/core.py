@@ -91,10 +91,9 @@ def _create(**kwargs):
 
 # ── data minimisation (the only thing Claude ever sees) ──────────────────────
 
-def to_model_view(c: dict, *, booking_history: list[dict] | None = None) -> dict:
-    """Strip a candidate down to the allow-listed fields. `booking_history`
-    (gages/past bookings) is Phase 3 and only included when Lofi approved it."""
-    view = {
+def to_model_view(c: dict) -> dict:
+    """Strip a candidate down to the allow-listed fields (data minimisation)."""
+    return {
         "artist_id": c.get("artist_id"),
         "name": c.get("artist_name"),
         "genres": (c.get("genres") or [])[:6],
@@ -109,9 +108,6 @@ def to_model_view(c: dict, *, booking_history: list[dict] | None = None) -> dict
         },
         "forecast_90d": c.get("forecast_90d"),
     }
-    if booking_history:
-        view["booking_history"] = booking_history  # Phase 3, gage-approved
-    return view
 
 
 # ── prompts ──────────────────────────────────────────────────────────────────

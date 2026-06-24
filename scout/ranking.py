@@ -11,7 +11,6 @@ the ranking + filters here remain the deterministic backbone.
 from __future__ import annotations
 
 import csv
-import re
 import sys
 from pathlib import Path
 
@@ -22,6 +21,7 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 from scoring.five_scores import compute_five_scores  # noqa: E402
+from scout.genre import norm as _norm  # noqa: E402
 
 _PREDICTIONS_PATH = _ROOT / "ml" / "models" / "predictions.csv"
 _TAXONOMY_PATH = _ROOT / "scoring" / "lofi_feel_taxonomy.yaml"
@@ -65,10 +65,6 @@ def parse_genres(g) -> list[str]:
                 pass
         return [p.strip().lower() for p in s.split(",") if p.strip()]
     return []
-
-
-def _norm(s: str) -> str:
-    return re.sub(r"[^a-z0-9]", "", str(s).lower())
 
 
 def genre_match(genres: list[str], taxonomy: dict) -> dict:
@@ -205,8 +201,9 @@ def rank_candidates(candidates: list[dict], taxonomy: dict, *,
         pool.append(c)
 
     for c in pool:
-        c["rank"] = round(rank_score(c), 1)
-        c["waarom"] = explain_nl(c, taxonomy)
+        if "rank" not in c:  # deterministic — skip if already ranked (pre-ranked pool)
+            c["rank"] = round(rank_score(c), 1)
+            c["waarom"] = explain_nl(c, taxonomy)
 
     keymap = {
         "rank": "rank",

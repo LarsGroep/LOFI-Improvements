@@ -31,6 +31,10 @@ import os
 from functools import lru_cache
 from urllib.parse import quote
 
+from scout.genre import genre_list as _genre_list
+from scout.genre import norm as _norm
+from scout.genre import parse_genres as _parse_genres
+
 _API_ROOT = "https://api.airtable.com/v0"
 _META_ROOT = "https://api.airtable.com/v0/meta"
 
@@ -93,24 +97,6 @@ def _ar(key: str) -> str:
 
 
 # ── small value helpers ──────────────────────────────────────────────────────
-
-def _norm(s) -> str:
-    return "".join(ch for ch in str(s).lower() if ch.isalnum())
-
-
-def _genre_list(g) -> list[str]:
-    """Readable genre names (original casing/spacing), order preserved."""
-    if isinstance(g, list):
-        return [str(x).strip() for x in g if str(x).strip()]
-    if isinstance(g, str):
-        return [p.strip() for p in g.replace(";", ",").split(",") if p.strip()]
-    return []
-
-
-def _parse_genres(g) -> set[str]:
-    """Normalised genre tokens — for matching only, never for display."""
-    return {_norm(x) for x in _genre_list(g)}
-
 
 def _value(v):
     """Flatten Airtable values (links / lookups / attachments arrive as lists)."""

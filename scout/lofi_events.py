@@ -26,22 +26,13 @@ import zipfile
 from functools import lru_cache
 from pathlib import Path
 
+from scout.genre import norm as _norm
+from scout.genre import parse_genres as _parse_genres
+
 _ROOT = Path(__file__).parent.parent
 _ZIP = _ROOT / "lineup_recommender" / "data" / "lofi" / "artists+events_clean.zip"
 _EVENTS_CSV = "artist_events_clean.csv"
 _ARTISTS_CSV = "artists_clean.csv"
-
-
-def _norm(s) -> str:
-    return "".join(ch for ch in str(s).lower() if ch.isalnum())
-
-
-def _parse_genres(g) -> set[str]:
-    if isinstance(g, list):
-        return {_norm(x) for x in g if x}
-    if isinstance(g, str):
-        return {_norm(x) for x in g.replace(";", ",").split(",") if x.strip()}
-    return set()
 
 
 def _to_int(x):
@@ -196,13 +187,6 @@ def _clean_genre(s) -> str:
     return str(s or "").strip().strip('"').strip("'").strip().lower()
 
 
-def _atoms(label: str) -> list[str]:
-    """Explode a compound label ('bounce / trance', 'left field house & techno')
-    into atomic genres so each lane is independently matchable."""
-    parts = label.replace("&", "/").replace(",", "/").split("/")
-    return [p.strip() for p in parts if p.strip()]
-
-
 @lru_cache(maxsize=1)
 def lofi_genre_profile() -> tuple:
     """Genres LOFI has ACTUALLY booked, from past events: each
@@ -226,20 +210,4 @@ def lofi_genre_profile() -> tuple:
            for name, d in counts.items()]
     out.sort(key=lambda r: r["events"], reverse=True)
     return tuple(out)
-
-
-@lru_cache(maxsize=1)
-def lofi_booked_genres() -> frozenset:
-    """Normalised set of every genre LOFI has booked — both whole labels and their
-    atomic parts (so 'trance' matches LOFI's 'bounce / trance' lane). A quick
-    'is this lane in-scope for LOFI' check, broader than the stated core."""
-    g: set[str] = set()
-    for r in lofi_genre_profile():
-        g.add(_norm(r["genre"]))
-        g |= {_norm(a) for a in _atoms(r["genre"])}
-    for a in _aggregates().values():
-        for label in (a.get("genres") or []):
-            g.add(_norm(_clean_genre(label)))
-            g |= {_norm(x) for x in _atoms(_clean_genre(label))}
-    return frozenset(x for x in g if x)
 
