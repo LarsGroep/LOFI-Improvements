@@ -144,7 +144,8 @@ def _scout_system() -> str:
 
 def _chat_system(artist_view: dict) -> str:
     has_bookings = bool(artist_view.get("booking_history")
-                        or artist_view.get("comparables"))
+                        or artist_view.get("comparables")
+                        or artist_view.get("lofi_record"))
     lines = [
         "You are LOFI's artist-intelligence assistant, helping a booking team "
         "decide about ONE artist. Think like an experienced LOFI booker "
@@ -185,6 +186,15 @@ def _chat_system(artist_view: dict) -> str:
         "position + audience + growth trajectory, and say why each one fits. Use "
         "`comparables` / `booking_history` (Airtable) only for fee/draw "
         "benchmarking. Never invent names you were not given.",
+        "- For FEE and DRAW questions, ground strictly on LOFI's own numbers: "
+        "`lofi_record` (this artist's LOFI economics — Sound/genre, `fee_range`, "
+        "`last_fee_paid`, `last_event_visitors`, `avg_ticket_price`, "
+        "`avg_bar_spend`, `momentum`, `fit_lofi`), `booking_history` (this "
+        "artist's past LOFI gages/events) and `comparables` (genre-matched past "
+        "LOFI bookings with their fees). Quote the figure and where it comes from; "
+        "if a fee was never paid by LOFI, say so and reason from comparables "
+        "instead of guessing. `fit_lofi` and `momentum` here are the team's own "
+        "assessment — weight them.",
         "- Weight qualitative booker feedback highly (real-world > scraped) when "
         "it is present.",
         "- Use `show_history`, `nl_signal` and `milestones` as live-history "

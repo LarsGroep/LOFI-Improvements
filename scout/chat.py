@@ -85,7 +85,8 @@ def render_artist_chat(artist_id: str, name: str, profile: dict,
     view = build_artist_view(artist_id, name, profile, ml, ext=ext,
                              ra_df=ra_df, pf_data=pf_data, vdf=vdf,
                              nl_score=nl_score, booker_feedback=feedback)
-    if not view["booking_history"] and not view["comparables"]:
+    if (not view["booking_history"] and not view["comparables"]
+            and not view.get("lofi_record")):
         st.caption("Airtable booking data not connected yet — I can't answer "
                    "fee/ticket questions.")
 

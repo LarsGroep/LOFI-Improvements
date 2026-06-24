@@ -18,7 +18,8 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 from scoring.five_scores import compute_five_scores  # noqa: E402
-from scout.airtable import load_booking_history, load_comparables  # noqa: E402
+from scout.airtable import (  # noqa: E402
+    load_artist_record, load_booking_history, load_comparables)
 from scout.ranking import load_predictions, parse_genres  # noqa: E402
 
 
@@ -144,6 +145,8 @@ def build_artist_view(artist_id: str, name: str, profile: dict,
     if booker_feedback is None:
         from scout.feedback import load_feedback
         booker_feedback = load_feedback(artist_id)
+    lofi = load_artist_record(name)  # Artists-table row (genre, last fee, draw)
+    lofi_genres = (lofi or {}).get("genres")
     return {
         "artist_id": artist_id,
         "name": name,
@@ -169,7 +172,8 @@ def build_artist_view(artist_id: str, name: str, profile: dict,
         "show_history": _show_summary(ra_df, pf_data),
         "nl_signal": _nl_signal(nl_score, pf_data),
         "milestones": _milestones(vdf),
-        # second world (Airtable) — [] until configured; gage-approved (option 1)
+        # second world (Airtable) — [] / None until configured; gage-approved (opt 1)
+        "lofi_record": lofi,
         "booking_history": load_booking_history(name),
-        "comparables": load_comparables(name, profile or {}),
+        "comparables": load_comparables(name, profile or {}, genres=lofi_genres),
     }
