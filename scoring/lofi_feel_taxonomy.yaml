@@ -1,0 +1,160 @@
+# LOFI Feel Taxonomy — scoring config for Tech-House / House sound framework
+# Source: LOFI Artist Intelligence route map.txt
+# All tier lists feed directly into the LLM system prompt and taxonomy scorer.
+# To add a new sound framework: duplicate this file, adjust lists, update scorer weight YAML.
+
+sound: tech_house_house
+
+# ── Genre tags ────────────────────────────────────────────────────────────────
+genres:
+  tier_1:
+    - tech house
+    - minimal techno
+    - deep house
+    - organic house
+    - micro house
+    - afro house
+    - tribal house
+  tier_2:
+    - house
+    - melodic techno
+    - melodic house
+    - electronica
+    - dub techno
+    - minimal
+    - jackin house
+    - soulful house
+  disqualifying:
+    - pop
+    - hip hop
+    - rap
+    - trap
+    - country
+    - k-pop
+    - edm
+    - big room
+    - hardstyle
+    - drum and bass
+    - dubstep
+    - reggaeton
+    - latin pop
+    - r&b
+
+# ── Record labels ─────────────────────────────────────────────────────────────
+labels:
+  tier_1:
+    # Route map explicit + well-known underground imprints
+    - Solid Grooves Records
+    - PIV Records
+    - Hot Creations
+    - Cuttin Headz
+    - Revival New York
+    - No Art
+    - Eastenderz
+    - Heavy House Society
+    - Cecille Records
+    - CircoLoco Records
+    - Up The Stuss
+    - Innervisions
+    - Drumcode
+    - Cadenza
+    - FORM Music
+    - Kompakt
+    - Cocoon Recordings
+    - Desolat
+    - Get Physical Music
+    - Rejected
+    - Suara
+  tier_2:
+    - Terminal M
+    - Elrow Music
+    - Saved Records
+    - ANTS
+    - Toolroom Records
+    - 20/20 Vision
+    - Crosstown Rebels
+    - Mobilee Records
+    - Connaisseur Recordings
+    - Dear Deer
+    - Rekids
+
+# ── Booking agencies ──────────────────────────────────────────────────────────
+agencies:
+  tier_1:  # score 10
+    - The Team
+    - WME
+    - CAA
+    - Prime Culture
+    - Luma Agency
+  tier_2:  # score 8
+    - Peoples Agency
+    - David Lewis Agency
+    - Future Artists Agency
+    - NGE Booking
+    - Liaison Artists
+    - Earth Agency
+    - Platform Artist
+    - LittleBig Agency
+  tier_3:  # score 6
+    - Meanwhile
+    - MN2S
+
+# ── Festivals & clubs (Ibiza / key events) ───────────────────────────────────
+festivals:
+  key:
+    - Solid Grooves
+    - Paradise
+    - Elrow
+    - Music On
+    - ANTS
+    - PIV
+    - Circoloco
+    - Sunwaves
+    - Kappa FuturFestival
+    - Hi Ibiza
+    - DC10 Ibiza
+    - Boiler Room
+
+# ── Benchmark artists (used for similarity framing in LLM prompt) ─────────────
+benchmark_artists:
+  tier_a_plus:
+    - Chris Stussy
+    - PAWSA
+    - The Martinez Brothers
+    - Marco Carola
+    - Mau P
+  tier_a:
+    - East End Dubs
+    - Josh Baker
+    - Rossi.
+    - Kolter
+    - Dennis Cruz
+    - Jamback
+  tier_b:
+    - Toman
+    - Julian fijma
+    - M-High
+    - Locklead
+    - Luuk van Dijk
+    - Marsolo
+    - LP Rhythm
+    - Sidney Charles
+
+# ── Scoring weights for hybrid composite ──────────────────────────────────────
+weights:
+  taxonomy:    0.35
+  embedding:   0.35
+  neighboring: 0.30
+
+# ── Auto-promote threshold ────────────────────────────────────────────────────
+# Pending artists scoring >= this are automatically promoted to
+# candidate_status='accepted', needs_scraping=true after each scoring run.
+# Disqualified artists are never promoted regardless of score.
+# Override per-run with: python scoring/lofi_scorer.py --threshold 70
+auto_promote_threshold: 60
+
+# ── Taxonomy sub-weights (sum to 1.0) ────────────────────────────────────────
+taxonomy_weights:
+  genre: 0.50
+  label: 0.30
+  agency: 0.20
