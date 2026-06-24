@@ -187,3 +187,59 @@ def load_comparable_events(name: str, genres, event_type: str | None = None,
         if len(out) >= limit:
             break
     return out
+
+
+# ── LOFI's actual genre footprint (ground truth for sound-fit) ────────────────
+
+def _clean_genre(s) -> str:
+    """A readable genre label: strip stray CSV quotes/whitespace, lowercase."""
+    return str(s or "").strip().strip('"').strip("'").strip().lower()
+
+
+def _atoms(label: str) -> list[str]:
+    """Explode a compound label ('bounce / trance', 'left field house & techno')
+    into atomic genres so each lane is independently matchable."""
+    parts = label.replace("&", "/").replace(",", "/").split("/")
+    return [p.strip() for p in parts if p.strip()]
+
+
+@lru_cache(maxsize=1)
+def lofi_genre_profile() -> tuple:
+    """Genres LOFI has ACTUALLY booked, from past events: each
+    {genre, events, avg_tickets}, most-booked first. This is the empirical
+    'what LOFI books' — broader than the stated tech-house/house core, so the AI
+    can judge sound-fit against reality instead of a fixed taxonomy."""
+    counts: dict[str, dict] = {}
+    for e in _events():
+        for part in _clean_genre(e.get("genre")).split(","):
+            name = part.strip()
+            if not name:
+                continue
+            d = counts.setdefault(name, {"events": 0, "tickets": []})
+            d["events"] += 1
+            if e.get("actual_tickets"):
+                d["tickets"].append(e["actual_tickets"])
+    out = [{"genre": name,
+            "events": d["events"],
+            "avg_tickets": (round(sum(d["tickets"]) / len(d["tickets"]))
+                            if d["tickets"] else None)}
+           for name, d in counts.items()]
+    out.sort(key=lambda r: r["events"], reverse=True)
+    return tuple(out)
+
+
+@lru_cache(maxsize=1)
+def lofi_booked_genres() -> frozenset:
+    """Normalised set of every genre LOFI has booked — both whole labels and their
+    atomic parts (so 'trance' matches LOFI's 'bounce / trance' lane). A quick
+    'is this lane in-scope for LOFI' check, broader than the stated core."""
+    g: set[str] = set()
+    for r in lofi_genre_profile():
+        g.add(_norm(r["genre"]))
+        g |= {_norm(a) for a in _atoms(r["genre"])}
+    for a in _aggregates().values():
+        for label in (a.get("genres") or []):
+            g.add(_norm(_clean_genre(label)))
+            g |= {_norm(x) for x in _atoms(_clean_genre(label))}
+    return frozenset(x for x in g if x)
+

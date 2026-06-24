@@ -122,11 +122,33 @@ def _taxonomy_block() -> str:
     g = t.get("genres", {})
     b = t.get("benchmark_artists", {})
     return (
-        "Kerngenres: " + ", ".join(g.get("tier_1", [])) + ". "
-        "Aanverwant: " + ", ".join(g.get("tier_2", [])) + ". "
+        "Stated core (a starting reference, NOT the limit of what LOFI books): "
+        "kerngenres " + ", ".join(g.get("tier_1", [])) + "; "
+        "aanverwant " + ", ".join(g.get("tier_2", [])) + ". "
         "Referentie-artiesten: "
         + ", ".join(b.get("tier_a_plus", []) + b.get("tier_a", [])) + "."
     )
+
+
+def _lofi_books_block() -> str:
+    """Ground truth for sound-fit: the genres LOFI has actually booked, with how
+    often and how well they drew. Broader than the stated tech-house core."""
+    try:
+        from scout.lofi_events import lofi_genre_profile
+        prof = lofi_genre_profile()
+    except Exception:
+        prof = ()
+    if not prof:
+        return ""
+    items = "; ".join(
+        f"{r['genre']} ({r['events']} events"
+        + (f", avg {r['avg_tickets']} tix" if r.get("avg_tickets") else "") + ")"
+        for r in prof[:20])
+    return (
+        "GENRES LOFI HAS ACTUALLY BOOKED (ground truth for sound-fit — this is "
+        "what fit means, NOT the stated core; it is far broader and includes "
+        "bounce/trance, progressive/hard techno, etc.): " + items + ". "
+        "Any lane on this list is IN-SCOPE for LOFI; do not call it 'off-genre'.")
 
 
 def _scout_system() -> str:
@@ -204,10 +226,15 @@ def _chat_system(artist_view: dict) -> str:
         "Honesty (critical — the team does not fully trust the data yet):",
         "- NEVER invent ticket numbers, gages, comparable names, or facts. If you "
         "cannot ground something, say what data is missing.",
-        "- Flag suspect data: if the genre does not match tech-house/house, the "
-        "Chartmetric profile may be a name collision (wrong artist) — say so and "
-        "lower confidence. A very low CM score or no releases for a DJ-led artist "
-        "is expected, not a red flag by itself.",
+        "- SOUND-FIT is judged against the genres LOFI ACTUALLY books (see the "
+        "LOFI-books list below), not a narrow core. LOFI's roster is broad "
+        "(bounce/trance, progressive/hard techno, etc.) — if the artist's lane is "
+        "on that list it FITS; never call it 'off-genre'. If LOFI has already "
+        "booked this artist, fit is established by definition. Only flag a genre "
+        "LOFI essentially never books (e.g. k-pop, country), which may also signal "
+        "a wrong Chartmetric profile (name collision) — then lower confidence. A "
+        "very low CM score or no releases for a DJ-led artist is expected, not a "
+        "red flag by itself.",
         "- A high momentum/growth score with a negative forecast means "
         "trending-then-cooling — name it.",
         "- State your confidence and what extra data would change the answer.",
@@ -219,7 +246,7 @@ def _chat_system(artist_view: dict) -> str:
             "past LOFI bookings — say that when asked. You CAN still speak to "
             "live draw and NL/Amsterdam demand from `show_history` and "
             "`nl_signal`.")
-    lines += ["", _taxonomy_block(),
+    lines += ["", _taxonomy_block(), "", _lofi_books_block(),
               "", "Artist data (JSON):",
               json.dumps(artist_view, ensure_ascii=False)]
     return "\n".join(lines)
@@ -446,12 +473,25 @@ def _validation_system(view: dict, use_web: bool = True) -> str:
             "",
         ]
     lines += [
+        "SOUND-FIT — judge against what LOFI ACTUALLY books (the LOFI-books list "
+        "below), NOT a narrow tech-house core:",
+        "- LOFI's roster is broad (bounce/trance, progressive/hard techno, afro "
+        "house, UKG, etc.). If the artist's lane appears in that list, it FITS — "
+        "do NOT call it 'off-genre' or dock fit for it.",
+        "- If `lofi_event_history` is non-empty, LOFI has already booked this "
+        "artist, so sound-fit is established by definition — do not question it.",
+        "- Only flag a fit risk when the lane is rare or absent from LOFI's actual "
+        "bookings; name the lane and how often LOFI books it.",
+        "",
         "Honesty: never invent tickets, fees, comparable names, or facts. A high "
         "growth score with a negative forecast is trending-then-cooling — name it. "
-        "If the genre is off tech-house/house/techno, flag a possible wrong "
-        "Chartmetric profile and lower confidence. Weight booker_feedback highly.",
+        "Only a genre LOFI essentially never books (e.g. k-pop, country) suggests "
+        "a possible wrong Chartmetric profile — then lower confidence. Weight "
+        "booker_feedback highly.",
         "",
         _taxonomy_block(),
+        "",
+        _lofi_books_block(),
         "",
         _VALIDATION_CONTRACT,
         "",
@@ -600,11 +640,16 @@ def _compare_system() -> str:
         "trajectory (a high growth score with a negative forecast is "
         "trending-then-cooling — say so), and risk. Use ONLY the provided data; "
         "never invent numbers or names.",
+        "Judge sound-fit against the genres LOFI ACTUALLY books (the LOFI-books "
+        "list below), not a narrow core — LOFI's roster is broad, so a lane on "
+        "that list is in-scope, not 'off-genre'.",
         "Be concise: a short head-to-head, then a clear RANKED recommendation "
         "(who to prioritise and why), and one line on what extra data would "
         "change it.",
         "",
         _taxonomy_block(),
+        "",
+        _lofi_books_block(),
     ])
 
 
@@ -659,9 +704,12 @@ def _shortlist_system(views: list[dict], use_web: bool = True) -> str:
         "single-artist validation.",
         "",
         "THEN rank them from smartest to riskiest booking for LOFI, and state the "
-        "#1 pick explicitly with why it beats #2. Sound-fit matters: weight the "
-        "tech-house / house / techno core and flag anything off-genre. A high "
-        "growth score with a negative forecast is trending-then-cooling — name it.",
+        "#1 pick explicitly with why it beats #2. Sound-fit is judged against the "
+        "genres LOFI ACTUALLY books (the LOFI-books list below), not a narrow "
+        "core: LOFI's roster is broad (bounce/trance, progressive/hard techno, "
+        "etc.), so a lane on that list is in-scope — do NOT call it 'off-genre'. "
+        "If LOFI already booked an artist, their fit is established. A high growth "
+        "score with a negative forecast is trending-then-cooling — name it.",
     ]
     if use_web:
         lines += [
@@ -686,6 +734,8 @@ def _shortlist_system(views: list[dict], use_web: bool = True) -> str:
         "extra data (a booker note, the fee ask) would change the ranking.",
         "",
         _taxonomy_block(),
+        "",
+        _lofi_books_block(),
         "",
         "Shortlist data (JSON):",
         json.dumps(views, ensure_ascii=False, default=list),
