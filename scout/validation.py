@@ -104,6 +104,12 @@ def _render_result(res: dict) -> None:
                 st.markdown(f"- {m}")
 
 
+def render_validation_result(res: dict) -> None:
+    """Public wrapper so other surfaces (e.g. the Scout page) can render a
+    validation verdict without re-implementing the layout."""
+    _render_result(res)
+
+
 def render_validation(artist_id: str, name: str, profile: dict,
                       ml: dict | None, ext: dict | None = None,
                       ra_df=None, pf_data: dict | None = None, vdf=None,

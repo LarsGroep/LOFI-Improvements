@@ -17,7 +17,13 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
-from agents.core import compare_artists, compliance_status, generate_rationales
+from agents.core import (
+    compare_artists,
+    compliance_status,
+    generate_rationales,
+    validate_artist,
+)
+from scout.context import build_validation_view
 from scout.data import load_flat_profiles, load_ml_features, make_client
 from scout.ranking import (
     build_candidates,
@@ -25,6 +31,7 @@ from scout.ranking import (
     load_taxonomy,
     rank_candidates,
 )
+from scout.validation import render_validation_result
 
 _SCORE_FIELDS = [
     ("momentum", "Momentum"),
@@ -48,7 +55,9 @@ def _candidates_and_taxonomy():
     flat = load_flat_profiles(client)
     ml = load_ml_features(client)
     candidates = build_candidates(flat, ml, load_predictions())
-    return candidates, load_taxonomy()
+    # raw profile by id — needed to run the full validation from the Scout page
+    flat_by_id = {p["artist_id"]: p for p in flat if p.get("artist_id")}
+    return candidates, load_taxonomy(), flat_by_id, ml
 
 
 # ── shared table builders ─────────────────────────────────────────────────────
@@ -136,8 +145,18 @@ def _ai_card(c: dict, r: dict | None) -> None:
 
 # ── tab: Scout (search → select → analyse) ───────────────────────────────────
 
+def _add_to_compare(name: str) -> None:
+    cur = list(st.session_state.get("cmp_picks", []))
+    if name not in cur:
+        st.session_state["cmp_picks"] = (cur + [name])[:3]
+        st.toast(f"Added {name} to Compare ⚖️")
+    else:
+        st.toast(f"{name} is already in Compare")
+
+
 def _render_scout_tab(candidates: list[dict], taxonomy: dict,
-                      by_name: dict, names: list[str]) -> None:
+                      by_name: dict, names: list[str],
+                      flat_by_id: dict, ml: dict) -> None:
     st.markdown("**Search artists to analyse**")
     picks = st.multiselect(
         "Search and add artists", names, key="scout_picks",
@@ -170,10 +189,11 @@ def _render_scout_tab(candidates: list[dict], taxonomy: dict,
         st.divider()
 
     with st.expander("Browse the full ranked pool", expanded=not sel):
-        _render_browse(candidates, taxonomy)
+        _render_browse(candidates, taxonomy, flat_by_id, ml)
 
 
-def _render_browse(candidates: list[dict], taxonomy: dict) -> None:
+def _render_browse(candidates: list[dict], taxonomy: dict,
+                   flat_by_id: dict, ml: dict) -> None:
     g = taxonomy.get("genres", {})
     genre_opts = sorted(set(g.get("tier_1", []) + g.get("tier_2", [])))
     f = st.columns([2, 1, 1, 1])
@@ -219,11 +239,41 @@ def _render_browse(candidates: list[dict], taxonomy: dict) -> None:
         file_name="lofi_scout_shortlist.csv", mime="text/csv")
 
     rows = event.selection.rows if event and event.selection else []
-    if rows:
+    if not rows:
+        st.caption("Select a row for the score breakdown and one-click actions.")
+        return
+
+    c = ranked[rows[0]]
+    st.divider()
+    _detail(c)
+
+    # ── one-click actions: jump straight into a validation or a comparison ─────
+    aid = c["artist_id"]
+    act = st.columns([1.2, 1.4, 1.6])
+    use_web = act[2].checkbox(
+        "🔍 web search", value=True, key=f"browse_web_{aid}",
+        help="Use web reputation in the validation (esp. DJ-led artists).")
+    validate = act[0].button("🎟️ Validate", key=f"browse_val_{aid}",
+                             type="primary",
+                             help="Ticket & fit verdict grounded in LOFI history")
+    if act[1].button("➕ Add to Compare", key=f"browse_cmp_{aid}"):
+        _add_to_compare(c["artist_name"])
+
+    if validate:
+        with st.spinner("Validating selected artist…"):
+            try:
+                view = build_validation_view(
+                    aid, c["artist_name"], flat_by_id.get(aid) or {},
+                    ml.get(aid))
+                st.session_state.setdefault("validation", {})[aid] = {
+                    "result": validate_artist(view, use_web=use_web), "note": ""}
+            except Exception as e:  # noqa: BLE001
+                st.error(f"Validation failed: {e}")
+
+    cached = st.session_state.get("validation", {}).get(aid)
+    if cached:
         st.divider()
-        _detail(ranked[rows[0]])
-    else:
-        st.caption("Select a row for an artist's score breakdown.")
+        render_validation_result(cached["result"])
 
 
 # ── tab: Compare (2-3 artists, head-to-head AI) ──────────────────────────────
@@ -289,7 +339,7 @@ def render_scout_page() -> None:
         "are data-driven; AI runs on demand.")
 
     try:
-        candidates, taxonomy = _candidates_and_taxonomy()
+        candidates, taxonomy, flat_by_id, ml = _candidates_and_taxonomy()
     except Exception as e:  # noqa: BLE001 — surface config/connection issues clearly
         st.error(f"Could not load artists: {e}")
         st.info("Check that SUPABASE_URL and SUPABASE_KEY are set.")
@@ -306,6 +356,6 @@ def render_scout_page() -> None:
 
     tab_scout, tab_compare = st.tabs(["🔍 Scout", "⚖️ Compare"])
     with tab_scout:
-        _render_scout_tab(candidates, taxonomy, by_name, names)
+        _render_scout_tab(candidates, taxonomy, by_name, names, flat_by_id, ml)
     with tab_compare:
         _render_compare_tab(by_name, names)
