@@ -614,6 +614,151 @@ def compare_artists(candidates: list[dict]) -> str:
                    if getattr(b, "type", "") == "text").strip()
 
 
+# ── Shortlist booking analysis (deep, grounded, ranked) ──────────────────────
+
+def _shortlist_system(views: list[dict], use_web: bool = True) -> str:
+    lines = [
+        "You are a senior LOFI booker / A&R choosing which artist to book from a "
+        "shortlist for LOFI in Amsterdam (tech-house / house / techno). Be "
+        "concrete, skeptical, and grounded.",
+        _lang_line(),
+        "",
+        "You are given up to 6 artists. Each carries LOFI's own grounding: "
+        "`lofi_event_history` (their past LOFI draw — the strongest signal), "
+        "`comparable_lofi_events` (genre-matched past LOFI events), `grounding` "
+        "(whether a ticket estimate is allowed), plus the five scores, growth "
+        "forecast, genres, show history and NL signal.",
+        "",
+        "For EACH artist, briefly: classify producer-led vs DJ-led; read their "
+        "draw / LOFI sound-fit / timing; and give an expected LOFI draw ONLY when "
+        "grounded (own history or >=3 comparable events) — otherwise say it is not "
+        "groundable and do NOT invent a number. Same trust-first rule as the "
+        "single-artist validation.",
+        "",
+        "THEN rank them from smartest to riskiest booking for LOFI, and state the "
+        "#1 pick explicitly with why it beats #2. Sound-fit matters: weight the "
+        "tech-house / house / techno core and flag anything off-genre. A high "
+        "growth score with a negative forecast is trending-then-cooling — name it.",
+    ]
+    if use_web:
+        lines += [
+            "",
+            "WEB SEARCH (<=8 searches total across the shortlist): check "
+            "residencies, recent/upcoming releases, Boiler Room / RA / Essential "
+            "Mix, agency/label and scene buzz — especially for DJ-led artists with "
+            "thin streaming data. Cite every web claim with its URL. Queries may "
+            "contain ONLY the artist's public name + public scene context, NEVER "
+            "LOFI's internal data (fees, ticket counts, occupancy, booker notes).",
+        ]
+    else:
+        lines += [
+            "",
+            "WEB SEARCH is OFF: reason only from the provided LOFI + Chartmetric "
+            "data; note where web reputation would have sharpened the call.",
+        ]
+    lines += [
+        "",
+        "Format as readable markdown: a short line per artist, then a clear "
+        "**Ranking** and a one-line **Bottom line** recommendation, then what "
+        "extra data (a booker note, the fee ask) would change the ranking.",
+        "",
+        _taxonomy_block(),
+        "",
+        "Shortlist data (JSON):",
+        json.dumps(views, ensure_ascii=False, default=list),
+    ]
+    return "\n".join(lines)
+
+
+def _mock_recommend(views: list[dict]) -> dict:
+    ranked = sorted(
+        views, key=lambda v: (v.get("scores") or {}).get("future_potential") or 0,
+        reverse=True)
+    out = ["**Preview mode** — enable LOFI_LLM_ENABLED for the full booking "
+           "analysis. Data-driven snapshot (ranked by potential):", ""]
+    for i, v in enumerate(ranked, 1):
+        s = v.get("scores") or {}
+        fc = v.get("forecast_90d")
+        g = v.get("grounding") or {}
+        out.append(
+            f"{i}. **{v.get('name')}** — potential {s.get('future_potential')}, "
+            f"momentum {s.get('momentum')}, growth {s.get('growth')}, forecast "
+            f"{'—' if fc is None else f'{fc:+.0f}%'} · "
+            f"{'LOFI-grounded' if g.get('ticket_estimate_allowed') else 'thin LOFI data'}")
+    if ranked:
+        out += ["", f"**Bottom line (preview):** {ranked[0].get('name')} ranks "
+                "highest on potential — enable the AI for the grounded verdict."]
+    return {"analysis": "\n".join(out), "sources": []}
+
+
+def recommend_booking(views: list[dict], use_web: bool = True) -> dict:
+    """Deep, grounded analysis over up to 6 artists → ranked 'smartest to book'.
+
+    Returns {"analysis": markdown, "sources": [...]}. MOCK mode returns a
+    deterministic ranked snapshot so the UI stays visualisable."""
+    if not is_live():
+        return _mock_recommend(views)
+
+    user = ("Analyse this shortlist and tell me which artist is smartest to book "
+            "for LOFI, with a clear ranking.")
+    messages = [{"role": "user", "content": user}]
+    tool = {**_WEB_SEARCH_TOOL, "max_uses": 8}
+    resp = None
+    for _ in range(5):  # tolerate web-search pause_turn continuations
+        kwargs = dict(max_tokens=6000,
+                      system=_shortlist_system(views, use_web), messages=messages)
+        if use_web:
+            kwargs["tools"] = [tool]
+        resp = _create(**kwargs)
+        if getattr(resp, "stop_reason", None) == "refusal":
+            raise RuntimeError(f"Claude refused the request: {resp.stop_details}")
+        if getattr(resp, "stop_reason", None) == "pause_turn":
+            messages.append({"role": "assistant", "content": resp.content})
+            continue
+        break
+
+    text = "".join(b.text for b in resp.content
+                   if getattr(b, "type", "") == "text").strip()
+    return {"analysis": text, "sources": _collect_citations(resp)}
+
+
+def _shortlist_chat_system(views: list[dict], analysis: str) -> str:
+    return "\n".join([
+        "You are LOFI's booking assistant. The user is following up on a shortlist "
+        "booking analysis you already produced. Answer grounded ONLY in that "
+        "analysis and the artist data below; never invent numbers or names. Be "
+        "concise and decisive.",
+        _lang_line(),
+        "",
+        "The booking analysis you produced:",
+        analysis or "(none)",
+        "",
+        "Artist data (JSON):",
+        json.dumps(views, ensure_ascii=False, default=list),
+    ])
+
+
+def shortlist_chat_stream(views: list[dict], analysis: str,
+                          history: list[dict], user_msg: str):
+    """Follow-up chat over a finished shortlist analysis. Yields text chunks."""
+    if not is_live():
+        yield ("[Preview mode] The AI assistant is off. Once Claude is enabled "
+               "I'll answer follow-ups about this shortlist here.")
+        return
+    client = _client()
+    messages = list(history) + [{"role": "user", "content": user_msg}]
+    kw = dict(model=MODEL, max_tokens=2000,
+              system=_shortlist_chat_system(views, analysis), messages=messages)
+    try:
+        stream_cm = client.messages.stream(inference_geo=INFERENCE_GEO, **kw)
+    except TypeError:
+        stream_cm = client.messages.stream(
+            extra_body={"inference_geo": INFERENCE_GEO}, **kw)
+    with stream_cm as stream:
+        for text in stream.text_stream:
+            yield text
+
+
 # ── Per-artist chat (streaming) ──────────────────────────────────────────────
 
 def chat_stream(artist_view: dict, history: list[dict], user_msg: str):

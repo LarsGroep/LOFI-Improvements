@@ -20,7 +20,8 @@ import streamlit as st
 from agents.core import (
     compare_artists,
     compliance_status,
-    generate_rationales,
+    recommend_booking,
+    shortlist_chat_stream,
     validate_artist,
 )
 from scout.context import build_validation_view
@@ -130,20 +131,46 @@ def _detail(c: dict) -> None:
     st.caption("Open het volledige profiel via de pagina **Artiest Profiel**.")
 
 
-def _ai_card(c: dict, r: dict | None) -> None:
-    """One AI analysis card per selected artist — rendered once, never in a
-    shared column, so it cannot duplicate."""
-    with st.container(border=True):
-        head = st.columns([4, 1])
-        head[0].markdown(f"**{c['artist_name']}**  ·  "
-                         f"{', '.join(c['genres'][:3]) or '—'}")
-        fit = (r or {}).get("fit_score")
-        head[1].metric("Fit", f"{int(fit)}" if isinstance(fit, (int, float))
-                       else f"{c['rank']:.0f}")
-        st.markdown((r or {}).get("rationale_nl") or c["waarom"])
+# ── broad genre buckets (so the team picks a genre, not a subgenre) ───────────
+
+# Ordered: more specific buckets first. The first keyword a subgenre matches
+# wins; "electronic/electronica" is checked before "electro" so it doesn't get
+# swallowed. Anything unmatched falls into "Other".
+_BROAD_RULES = [
+    ("House", ["house"]),
+    ("Techno", ["techno", "schranz", "minimal"]),
+    ("Disco / Nu-Disco", ["disco", "italo", "boogie"]),
+    ("Garage / UKG", ["garage", "ukg", "2-step", "bassline"]),
+    ("Trance", ["trance", "psy"]),
+    ("Drum & Bass", ["drum and bass", "drum & bass", "dnb", "jungle"]),
+    ("Dubstep / Bass", ["dubstep", "bass music", "wonky"]),
+    ("Electronic", ["electronic", "electronica", "idm", "leftfield", "left field"]),
+    ("Electro", ["electro"]),
+    ("Ambient / Downtempo", ["ambient", "downtempo", "lo-fi", "lofi", "balearic",
+                             "chill"]),
+    ("Hip-Hop / Rap", ["hip hop", "hip-hop", "rap", "trap", "grime"]),
+    ("Pop", ["pop"]),
+    ("Hard", ["hardstyle", "hardcore", "hard techno", "gabber"]),
+]
 
 
-# ── tab: Scout (search → select → analyse) ───────────────────────────────────
+def _broad_genres(genres) -> list[str]:
+    """Map an artist's subgenres to the broad families they belong to."""
+    found: list[str] = []
+    for g in (genres or []):
+        gl = str(g).lower()
+        for bucket, kws in _BROAD_RULES:
+            if any(k in gl for k in kws):
+                if bucket not in found:
+                    found.append(bucket)
+                break
+        else:
+            if "Other" not in found:
+                found.append("Other")
+    return found
+
+
+# ── tab: Scout (genre → up to 6 → deep ranked analysis) ──────────────────────
 
 def _compare_tab_label() -> str:
     """Tab label with a live counter of artists queued for comparison."""
@@ -160,41 +187,120 @@ def _add_to_compare(name: str) -> None:
         st.toast(f"{name} is already in Compare")
 
 
+def _render_reco(reco: dict, flat_by_id: dict, ml: dict) -> None:
+    """Render a finished shortlist analysis + an interactive follow-up chat."""
+    res = reco["result"]
+    st.markdown(res.get("analysis") or "*(no analysis returned)*")
+
+    sources = res.get("sources") or []
+    if sources:
+        with st.expander("Sources (web)"):
+            for s in sources:
+                st.markdown(f"- [{s.get('title') or s['url']}]({s['url']})")
+
+    st.markdown("**Ask a follow-up about this analysis**")
+    hist = st.session_state.setdefault("scout_reco_chat", [])
+    for m in hist:
+        with st.chat_message(m["role"]):
+            st.markdown(m["content"])
+
+    q = st.chat_input("e.g. why is #1 ahead of #2? what fee makes sense?",
+                      key="scout_reco_chat_in")
+    if q:
+        with st.chat_message("user"):
+            st.markdown(q)
+        with st.chat_message("assistant"):
+            try:
+                full = st.write_stream(shortlist_chat_stream(
+                    reco["views"], res.get("analysis", ""), list(hist), q))
+            except Exception as e:  # noqa: BLE001
+                full = f"Something went wrong with the assistant: {e}"
+                st.error(full)
+        hist.append({"role": "user", "content": q})
+        hist.append({"role": "assistant", "content": full})
+
+
 def _render_scout_tab(candidates: list[dict], taxonomy: dict,
                       by_name: dict, names: list[str],
                       flat_by_id: dict, ml: dict) -> None:
-    st.markdown("**Search artists to analyse**")
-    picks = st.multiselect(
-        "Search and add artists", names, key="scout_picks",
-        label_visibility="collapsed", placeholder="Type an artist name…",
-        help="Search the unbooked pool; add one or more, then run AI analysis.")
-    sel = [by_name[n] for n in picks]
+    # index candidates by broad genre (size-ordered, "Other" last)
+    broad_index: dict[str, list[dict]] = {}
+    for c in candidates:
+        for b in _broad_genres(c.get("genres")):
+            broad_index.setdefault(b, []).append(c)
+    buckets = sorted((b for b in broad_index if b != "Other"),
+                     key=lambda b: -len(broad_index[b]))
+    if "Other" in broad_index:
+        buckets.append("Other")
 
-    if sel:
-        st.dataframe(_browse_df(sel), hide_index=True, use_container_width=True,
-                     column_order=_TABLE_ORDER, column_config=_TABLE_COLS)
+    st.markdown("**Pick a genre, then choose up to 6 artists for a deep, "
+                "LOFI-grounded booking analysis.**")
+    genre = st.selectbox(
+        "Genre", ["—"] + buckets, index=0, label_visibility="collapsed",
+        format_func=lambda b: "Choose a genre…" if b == "—"
+        else f"{b} ({len(broad_index[b])})")
 
-        status = compliance_status()
-        bc = st.columns([1, 3])
-        if bc[0].button("Run AI analysis", type="primary", key="scout_run_ai"):
-            with st.spinner("Analysing selected artists…"):
-                try:
-                    st.session_state["scout_ai"] = generate_rationales(sel)
-                except Exception as e:  # noqa: BLE001
-                    st.error(f"AI analysis failed: {e}")
-        if status["mode"] == "live":
-            bc[1].caption(f"AI live — {status['model']}, region "
-                          f"{status['inference_geo']}.")
+    if genre != "—":
+        # reset the artist picks when the genre changes (avoid stale options)
+        if st.session_state.get("scout_genre_last") != genre:
+            st.session_state["scout_genre_last"] = genre
+            st.session_state.pop("scout_genre_picks", None)
+
+        pool = sorted(broad_index[genre], key=lambda c: c["rank"], reverse=True)
+        seen: set[str] = set()
+        pool_names = [c["artist_name"] for c in pool
+                      if not (c["artist_name"] in seen or seen.add(c["artist_name"]))]
+        st.caption(f"{len(pool_names)} artists in **{genre}** — pick up to 6.")
+        picks = st.multiselect(
+            "Artists", pool_names, max_selections=6, key="scout_genre_picks",
+            label_visibility="collapsed", placeholder="Select up to 6 artists…")
+        sel = [by_name[n] for n in picks]
+
+        if sel:
+            st.dataframe(_compare_df(sel), hide_index=True,
+                         use_container_width=True)
+            status = compliance_status()
+            bc = st.columns([1.4, 1, 2])
+            use_web = bc[1].checkbox(
+                "🔍 web search", value=True, key="scout_reco_web",
+                help="Use web reputation in the analysis (esp. DJ-led artists). "
+                     "Off = LOFI + Chartmetric data only.")
+            run = bc[0].button("Run AI booking analysis", type="primary",
+                               key="scout_reco_run")
+            if status["mode"] == "live":
+                bc[2].caption(f"AI live — {status['model']}, region "
+                              f"{status['inference_geo']}.")
+            else:
+                bc[2].caption(f"Preview mode — {status['reason']}.")
+
+            if run:
+                with st.spinner("Running a deep booking analysis over the "
+                                "shortlist — this can take a bit…"):
+                    try:
+                        views = [build_validation_view(
+                            c["artist_id"], c["artist_name"],
+                            flat_by_id.get(c["artist_id"]) or {},
+                            ml.get(c["artist_id"])) for c in sel]
+                        st.session_state["scout_reco"] = {
+                            "key": tuple(sorted(picks)),
+                            "result": recommend_booking(views, use_web=use_web),
+                            "views": views}
+                        st.session_state["scout_reco_chat"] = []  # fresh follow-up
+                    except Exception as e:  # noqa: BLE001
+                        st.error(f"Analysis failed: {e}")
+
+            reco = st.session_state.get("scout_reco")
+            if reco and reco.get("key") == tuple(sorted(picks)):
+                st.divider()
+                _render_reco(reco, flat_by_id, ml)
         else:
-            bc[1].caption(f"Preview mode — {status['reason']}. Showing the "
-                          "data-driven rationale; AI fills this in when enabled.")
+            st.caption("Select at least one artist (up to 6) to analyse.")
+    else:
+        st.caption("Pick a genre to start. Or open **Browse** below to explore "
+                   "the full ranked pool.")
 
-        ai = st.session_state.get("scout_ai") or {}
-        for c in sel:
-            _ai_card(c, ai.get(c["artist_id"]))
-        st.divider()
-
-    with st.expander("Browse the full ranked pool", expanded=not sel):
+    st.divider()
+    with st.expander("Browse the full ranked pool"):
         _render_browse(candidates, taxonomy, flat_by_id, ml)
 
 
