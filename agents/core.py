@@ -427,6 +427,11 @@ def _validation_system(view: dict) -> str:
         "notable recent bookings, and scene buzz — ESPECIALLY when the data is "
         "thin or the artist is DJ-led (this fixes the low-digital-footprint blind "
         "spot). Put every web-sourced claim in web_context with its URL.",
+        "- Search queries may contain ONLY the artist's public name and public "
+        "scene context (genre, city, venue names). NEVER put LOFI's internal data "
+        "into a web query — no fees/gages, ticket counts, occupancy, booker "
+        "feedback, or comparable-event economics. Those stay inside this reasoning "
+        "only.",
         "",
         "Honesty: never invent tickets, fees, comparable names, or facts. A high "
         "growth score with a negative forecast is trending-then-cooling — name it. "
