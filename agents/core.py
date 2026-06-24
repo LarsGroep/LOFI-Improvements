@@ -351,6 +351,196 @@ def structure_feedback(raw_text: str) -> dict:
         return _fallback_feedback(raw_text)
 
 
+# ── Per-artist validation (web-search grounded, structured) ──────────────────
+
+# On Opus 4.8 the current web-search tool is web_search_20260209 (dynamic
+# filtering). NOTE: web search emits citation-bearing text blocks, and citations
+# are incompatible with output_config.format — so we ask for JSON in the prompt
+# and parse it from the text, rather than using structured-output mode.
+_WEB_SEARCH_TOOL = {
+    "type": "web_search_20260209",
+    "name": "web_search",
+    "max_uses": 4,
+    "user_location": {"type": "approximate", "country": "NL",
+                      "city": "Amsterdam", "timezone": "Europe/Amsterdam"},
+}
+
+_VALIDATION_CONTRACT = """Return ONLY one valid JSON object, no prose around it:
+{
+  "artist_type": "producer_led | dj_led | hybrid",
+  "lens": "scouting | validation",
+  "ticket_estimate": {"conservative": int, "base": int, "bull": int} | null,
+  "ticket_basis": "own_history | comparables | insufficient",
+  "sell_through": "low | medium | high | unknown",
+  "lofi_fit": {"score": int (0-100), "explanation": "plain English"},
+  "recommendation": "book_now | monitor | too_early | not_a_fit",
+  "comparable_events": [{"event": "", "date": "", "tickets": int, "why": ""}],
+  "key_signals": ["grounded positives, each naming its source"],
+  "key_risks": [""],
+  "data_confidence": "low | medium | high",
+  "missing_data": ["what you'd need to sharpen this"],
+  "web_context": [{"claim": "", "url": ""}]
+}"""
+
+
+def _validation_system(view: dict) -> str:
+    allowed = bool((view.get("grounding") or {}).get("ticket_estimate_allowed"))
+    lines = [
+        "You are a senior LOFI booker / A&R deciding whether to book ONE artist "
+        "for LOFI in Amsterdam (tech-house / house / techno scene). Be concrete, "
+        "skeptical, and grounded. Respond in English.",
+        "",
+        "Pick the lens and say which: SCOUTING (breakout potential, 6-18 months) "
+        "for small/rising artists, or VALIDATION (can they sell tickets at LOFI "
+        "now, does the sound fit, is the timing right) for established ones.",
+        "",
+        "First classify PRODUCER-LED vs DJ-LED and weight signals accordingly: "
+        "producer-led grows via releases / Spotify / charts (digital metrics "
+        "predict well); DJ-led grows via club reputation, residencies, RA / Boiler "
+        "Room / Essential Mix, word-of-mouth (digital metrics UNDERESTIMATE them — "
+        "lean on show_history, nl_signal, and web reputation instead).",
+        "",
+        "TICKET NUMBERS — trust-first, this is critical:",
+        "- Anchor any ticket figure ONLY on LOFI's own data: `lofi_event_history` "
+        "(this artist's past LOFI draw — the strongest signal) and "
+        "`comparable_lofi_events` (genre-matched past LOFI events). Web search "
+        "adds reputation and risk context; it NEVER sets the numbers.",
+        "- Give conservative/base/bull as a RANGE, with the comparables that "
+        "justify it. The comparables are the point; the number is the consequence.",
+    ]
+    if allowed:
+        lines.append("- You HAVE enough grounding here (own history or >=3 "
+                     "comparable events): give a range and set ticket_basis to "
+                     "'own_history' or 'comparables'.")
+    else:
+        lines.append("- You do NOT have enough grounding here (no own LOFI "
+                     "history and <3 comparable events): set ticket_estimate to "
+                     "null and ticket_basis to 'insufficient', and say in "
+                     "missing_data what would let you estimate. Do NOT guess a "
+                     "number.")
+    lines += [
+        "- sell_through is a bucket (low/medium/high) tied to the occupancy_rate "
+        "of the comparables — not a number you invent.",
+        "",
+        "WEB SEARCH (<=4 searches): use it to check recent/upcoming releases, "
+        "residencies, Boiler Room / RA Podcast / Essential Mix, agency/label, "
+        "notable recent bookings, and scene buzz — ESPECIALLY when the data is "
+        "thin or the artist is DJ-led (this fixes the low-digital-footprint blind "
+        "spot). Put every web-sourced claim in web_context with its URL.",
+        "",
+        "Honesty: never invent tickets, fees, comparable names, or facts. A high "
+        "growth score with a negative forecast is trending-then-cooling — name it. "
+        "If the genre is off tech-house/house/techno, flag a possible wrong "
+        "Chartmetric profile and lower confidence. Weight booker_feedback highly.",
+        "",
+        _taxonomy_block(),
+        "",
+        _VALIDATION_CONTRACT,
+        "",
+        "Artist data (JSON):",
+        json.dumps(view, ensure_ascii=False, default=list),
+    ]
+    return "\n".join(lines)
+
+
+def _extract_json(text: str) -> dict:
+    """Pull the JSON object out of the model's final text (handles ``` fences)."""
+    t = (text or "").strip()
+    if "```" in t:
+        seg = t.split("```")[1] if t.count("```") >= 2 else t
+        t = seg[4:] if seg.lstrip().lower().startswith("json") else seg
+        t = t.strip()
+    i, j = t.find("{"), t.rfind("}")
+    if i != -1 and j != -1 and j > i:
+        try:
+            return json.loads(t[i:j + 1])
+        except Exception:
+            return {}
+    return {}
+
+
+def _collect_citations(resp) -> list[dict]:
+    """Web-search URLs the model actually cited — provenance for the UI."""
+    out, seen = [], set()
+    for block in getattr(resp, "content", []) or []:
+        for c in (getattr(block, "citations", None) or []):
+            url = getattr(c, "url", None)
+            if url and url not in seen:
+                seen.add(url)
+                out.append({"title": getattr(c, "title", "") or url, "url": url})
+    return out
+
+
+def _mock_validation(view: dict) -> dict:
+    return {
+        "artist_type": "unknown",
+        "lens": "validation",
+        "ticket_estimate": None,
+        "ticket_basis": "insufficient",
+        "sell_through": "unknown",
+        "lofi_fit": {"score": None,
+                     "explanation": "Preview mode — enable LOFI_LLM_ENABLED for a "
+                                    "real, web-grounded validation."},
+        "recommendation": "monitor",
+        "comparable_events": [
+            {"event": e.get("event_name"), "date": e.get("event_date"),
+             "tickets": e.get("actual_tickets"), "why": f"genre {e.get('genre')}"}
+            for e in (view.get("comparable_lofi_events") or [])[:5]],
+        "key_signals": [],
+        "key_risks": [],
+        "data_confidence": "low",
+        "missing_data": ["AI assistant is off (preview mode)."],
+        "web_context": [],
+        "_mock": True,
+    }
+
+
+def validate_artist(view: dict, booker_note: str | None = None) -> dict:
+    """Single web-search-grounded validation call → structured verdict.
+
+    MOCK mode returns a labelled placeholder (UI stays visualisable). LIVE mode
+    enables web search, parses the JSON the model returns, attaches the real web
+    citations, and enforces the trust-first rule in code: no ticket number unless
+    the artist has LOFI history or >=3 comparable events."""
+    if not is_live():
+        return _mock_validation(view)
+
+    user = "Validate this artist for a LOFI booking."
+    if booker_note:
+        user += f"\n\nBooker note to weigh: {booker_note}"
+
+    messages = [{"role": "user", "content": user}]
+    resp = None
+    for _ in range(4):  # tolerate web-search pause_turn continuations
+        resp = _create(max_tokens=3000, system=_validation_system(view),
+                       tools=[_WEB_SEARCH_TOOL], messages=messages)
+        if getattr(resp, "stop_reason", None) == "refusal":
+            raise RuntimeError(f"Claude refused the request: {resp.stop_details}")
+        if getattr(resp, "stop_reason", None) == "pause_turn":
+            messages.append({"role": "assistant", "content": resp.content})
+            continue
+        break
+
+    text = "".join(b.text for b in resp.content if getattr(b, "type", "") == "text")
+    result = _extract_json(text)
+    if not result:
+        return {**_mock_validation(view),
+                "missing_data": ["The AI returned an unparseable response."],
+                "_error": "parse_failed", "_raw": text[:500]}
+
+    # provenance: attach the actual cited URLs as a backstop to web_context
+    cites = _collect_citations(resp)
+    if cites and not result.get("web_context"):
+        result["web_context"] = [{"claim": "", "url": c["url"]} for c in cites]
+    result["_sources"] = cites
+
+    # trust-first enforcement (belt-and-suspenders over the prompt rule)
+    if not (view.get("grounding") or {}).get("ticket_estimate_allowed"):
+        result["ticket_estimate"] = None
+        result["ticket_basis"] = "insufficient"
+    return result
+
+
 # ── Per-artist chat (streaming) ──────────────────────────────────────────────
 
 def chat_stream(artist_view: dict, history: list[dict], user_msg: str):

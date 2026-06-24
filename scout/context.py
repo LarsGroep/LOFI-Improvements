@@ -20,6 +20,8 @@ if str(_ROOT) not in sys.path:
 from scoring.five_scores import compute_five_scores  # noqa: E402
 from scout.airtable import (  # noqa: E402
     load_artist_record, load_booking_history, load_comparables)
+from scout.lofi_events import (  # noqa: E402
+    load_artist_lofi_history, load_comparable_events)
 from scout.ranking import load_predictions, parse_genres  # noqa: E402
 
 
@@ -177,3 +179,34 @@ def build_artist_view(artist_id: str, name: str, profile: dict,
         "booking_history": load_booking_history(name),
         "comparables": load_comparables(name, profile or {}, genres=lofi_genres),
     }
+
+
+def build_validation_view(artist_id: str, name: str, profile: dict,
+                          ml: dict | None, ext: dict | None = None,
+                          ra_df=None, pf_data: dict | None = None, vdf=None,
+                          nl_score=None,
+                          booker_feedback: list[dict] | None = None) -> dict:
+    """The chat view PLUS the LOFI ticketing corpus (own history + genre-matched
+    comparable events) used to anchor ticket/draw estimates. Adds a `grounding`
+    block so the trust-first rule (no ticket number without real evidence) can be
+    enforced in code, not just prompted."""
+    view = build_artist_view(artist_id, name, profile, ml, ext=ext, ra_df=ra_df,
+                             pf_data=pf_data, vdf=vdf, nl_score=nl_score,
+                             booker_feedback=booker_feedback)
+
+    # genre source for comparable retrieval: LOFI Sound > dashboard genres
+    genres = ((view.get("lofi_record") or {}).get("genres")
+              or list(view.get("genres") or []))
+    own = load_artist_lofi_history(name)
+    comps = load_comparable_events(name, genres)
+
+    has_own = bool(own.get("aggregate") or own.get("events"))
+    view["lofi_event_history"] = own            # own LOFI draw (CSV corpus)
+    view["comparable_lofi_events"] = comps      # genre-matched past LOFI events
+    # trust-first: a ticket range needs own-history OR >=3 comparable events
+    view["grounding"] = {
+        "has_own_lofi_history": has_own,
+        "n_comparable_events": len(comps),
+        "ticket_estimate_allowed": has_own or len(comps) >= 3,
+    }
+    return view
