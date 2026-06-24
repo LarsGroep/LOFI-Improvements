@@ -198,6 +198,13 @@ def _render_reco(reco: dict, flat_by_id: dict, ml: dict) -> None:
             for s in sources:
                 st.markdown(f"- [{s.get('title') or s['url']}]({s['url']})")
 
+    web = res.get("web")
+    if isinstance(web, dict) and web.get("errors"):
+        st.warning("Web search returned an error — "
+                   f"{', '.join(web['errors'])}. The analysis is still "
+                   "LOFI-grounded. If it says `web search not enabled`, enable it "
+                   "in the Anthropic Console (org settings).")
+
     st.markdown("**Ask a follow-up about this analysis**")
     hist = st.session_state.setdefault("scout_reco_chat", [])
     for m in hist:

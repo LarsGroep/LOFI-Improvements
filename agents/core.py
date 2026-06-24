@@ -489,6 +489,27 @@ def _collect_citations(resp) -> list[dict]:
     return out
 
 
+def _web_search_status(resp) -> dict:
+    """Inspect web_search_tool_result blocks so a silent 'no results' becomes a
+    real diagnosis. Web-search errors return HTTP 200 with an error object in the
+    block content (not an exception): a list content = results, an object/dict
+    content = an error (e.g. error_code 'max_uses_exceeded', or web search not
+    enabled in the Anthropic Console)."""
+    ran, errors = 0, []
+    for block in getattr(resp, "content", []) or []:
+        if getattr(block, "type", "") != "web_search_tool_result":
+            continue
+        content = getattr(block, "content", None)
+        if isinstance(content, list):
+            ran += 1
+        else:  # error object
+            code = (getattr(content, "error_code", None)
+                    or (content.get("error_code") if isinstance(content, dict) else None)
+                    or getattr(content, "type", None) or "unknown_error")
+            errors.append(str(code))
+    return {"searches_ran": ran, "errors": errors}
+
+
 def _mock_validation(view: dict) -> dict:
     return {
         "artist_type": "unknown",
@@ -556,6 +577,8 @@ def validate_artist(view: dict, booker_note: str | None = None,
     if cites and not result.get("web_context"):
         result["web_context"] = [{"claim": "", "url": c["url"]} for c in cites]
     result["_sources"] = cites
+    if use_web:
+        result["_web"] = _web_search_status(resp)  # diagnose silent 'no results'
 
     # trust-first enforcement (belt-and-suspenders over the prompt rule)
     if not (view.get("grounding") or {}).get("ticket_estimate_allowed"):
@@ -719,7 +742,10 @@ def recommend_booking(views: list[dict], use_web: bool = True) -> dict:
 
     text = "".join(b.text for b in resp.content
                    if getattr(b, "type", "") == "text").strip()
-    return {"analysis": text, "sources": _collect_citations(resp)}
+    out = {"analysis": text, "sources": _collect_citations(resp)}
+    if use_web:
+        out["web"] = _web_search_status(resp)  # diagnose silent 'no results'
+    return out
 
 
 def _shortlist_chat_system(views: list[dict], analysis: str) -> str:

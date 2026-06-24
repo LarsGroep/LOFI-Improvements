@@ -97,6 +97,17 @@ def _render_result(res: dict) -> None:
             elif url:
                 st.markdown(f"- [{url}]({url})")
 
+    web = res.get("_web")
+    if isinstance(web, dict) and (web.get("errors") or web.get("searches_ran") == 0):
+        if web.get("errors"):
+            st.warning("Web search returned an error — "
+                       f"{', '.join(web['errors'])}. Numbers above are still "
+                       "LOFI-grounded. If this is `web search not enabled`, turn "
+                       "it on in the Anthropic Console (org settings).")
+        else:
+            st.caption("Web search ran 0 searches this turn (the model didn't "
+                       "need it).")
+
     missing = res.get("missing_data") or []
     if missing:
         with st.expander("What would sharpen this verdict"):
