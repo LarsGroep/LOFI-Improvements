@@ -145,6 +145,12 @@ def _ai_card(c: dict, r: dict | None) -> None:
 
 # ── tab: Scout (search → select → analyse) ───────────────────────────────────
 
+def _compare_tab_label() -> str:
+    """Tab label with a live counter of artists queued for comparison."""
+    n = len(st.session_state.get("cmp_picks", []) or [])
+    return f"⚖️ Compare ({n})" if n else "⚖️ Compare"
+
+
 def _add_to_compare(name: str) -> None:
     cur = list(st.session_state.get("cmp_picks", []))
     if name not in cur:
@@ -354,7 +360,7 @@ def render_scout_page() -> None:
         by_name.setdefault(c["artist_name"], c)  # first wins on rare name clashes
     names = sorted(by_name)
 
-    tab_scout, tab_compare = st.tabs(["🔍 Scout", "⚖️ Compare"])
+    tab_scout, tab_compare = st.tabs(["🔍 Scout", _compare_tab_label()])
     with tab_scout:
         _render_scout_tab(candidates, taxonomy, by_name, names, flat_by_id, ml)
     with tab_compare:
