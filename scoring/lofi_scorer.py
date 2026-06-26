@@ -75,12 +75,23 @@ def score_taxonomy(cm: dict, taxonomy: dict) -> dict:
     disqualified = False
 
     g_score = 0
+    disq_list = g_cfg.get("disqualifying", [])
+    disq_hits: list[str] = []  # collect all disqualifying genre matches
     for g in genres:
-        if any(_norm(d) in _norm(g) or _norm(g) in _norm(d)
-               for d in g_cfg.get("disqualifying", [])):
-            disqualified = True
+        if any(_norm(d) in _norm(g) or _norm(g) in _norm(d) for d in disq_list):
+            disq_hits.append(g)
+
+    # Disqualify only if a bad genre appears in the first 3 positions OR
+    # 2+ disqualifying tags are present anywhere in the genre list.
+    # This prevents one secondary tag (e.g. "emo rap" on an acidcore artist)
+    # from triggering a full disqualify.
+    primary_disq = [g for g in disq_hits if genres.index(g) < 3]
+    if primary_disq or len(disq_hits) >= 2:
+        disqualified = True
+        for g in disq_hits:
             matched.append(f"DISQUALIFY: {g}")
-            break
+
+    for g in genres:
         if any(_norm(t) in _norm(g) or _norm(g) in _norm(t)
                for t in g_cfg.get("tier_1", [])):
             g_score = max(g_score, 100)
