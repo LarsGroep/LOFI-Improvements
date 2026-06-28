@@ -58,5 +58,13 @@ project_armadillo.txt
 .DS_Store
 Thumbs.db
 
+# Tool-generated local dirs
+.codex/
+.playwright-mcp/
+
+# Build artifacts
+*.tsbuildinfo
+*.err
+
 .vercel
 .env*
