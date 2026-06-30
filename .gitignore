@@ -58,6 +58,11 @@ project_armadillo.txt
 .DS_Store
 Thumbs.db
 
+# NDA-sensitive data — never commit
+lineup_recommender/data/interim/
+lineup_recommender/data/lofi/
+lineup_recommender/data/processed/
+
 # Tool-generated local dirs
 .codex/
 .playwright-mcp/
