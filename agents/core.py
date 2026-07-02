@@ -430,6 +430,13 @@ def _validation_system(view: dict, use_web: bool = True) -> str:
         "adds reputation and risk context; it NEVER sets the numbers.",
         "- Give conservative/base/bull as a RANGE, with the comparables that "
         "justify it. The comparables are the point; the number is the consequence.",
+        "- If `model_estimates` is present, its draw/fee/margin/window numbers "
+        "come from LOFI's calibrated models (empirical quantiles over LOFI's "
+        "own events + draw-adjusted comparable gages). ANCHOR your ranges to "
+        "them and EXPLAIN them — cite the method and sample size, and say so "
+        "explicitly when you deviate and why. Sections with method "
+        "'insufficient' give you nothing to anchor on — treat them as absent. "
+        "Never contradict a modelled range without naming a concrete reason.",
     ]
     if allowed:
         lines.append("- You HAVE enough grounding here (own history or >=3 "

@@ -13,3 +13,6 @@ anthropic>=0.69  # LLM core (agents/); inference_geo requires a recent SDK
 xgboost>=2.0
 scikit-learn>=1.4
 scipy>=1.13
+
+# Dev
+pytest>=8.0

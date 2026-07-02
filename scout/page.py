@@ -26,6 +26,7 @@ from agents.core import (
 )
 from scout.context import build_validation_view
 from scout.data import load_flat_profiles, load_ml_features, make_client
+from scout.deal import render_alerts_tab, render_deal_radar, render_model_health
 from scout.ranking import (
     build_candidates,
     load_predictions,
@@ -131,43 +132,9 @@ def _detail(c: dict) -> None:
     st.caption("Open het volledige profiel via de pagina **Artiest Profiel**.")
 
 
-# ── broad genre buckets (so the team picks a genre, not a subgenre) ───────────
+# ── broad genre buckets (shared codec — scout/genre.py) ──────────────────────
 
-# Ordered: more specific buckets first. The first keyword a subgenre matches
-# wins; "electronic/electronica" is checked before "electro" so it doesn't get
-# swallowed. Anything unmatched falls into "Other".
-_BROAD_RULES = [
-    ("House", ["house"]),
-    ("Techno", ["techno", "schranz", "minimal"]),
-    ("Disco / Nu-Disco", ["disco", "italo", "boogie"]),
-    ("Garage / UKG", ["garage", "ukg", "2-step", "bassline"]),
-    ("Trance", ["trance", "psy"]),
-    ("Drum & Bass", ["drum and bass", "drum & bass", "dnb", "jungle"]),
-    ("Dubstep / Bass", ["dubstep", "bass music", "wonky"]),
-    ("Electronic", ["electronic", "electronica", "idm", "leftfield", "left field"]),
-    ("Electro", ["electro"]),
-    ("Ambient / Downtempo", ["ambient", "downtempo", "lo-fi", "lofi", "balearic",
-                             "chill"]),
-    ("Hip-Hop / Rap", ["hip hop", "hip-hop", "rap", "trap", "grime"]),
-    ("Pop", ["pop"]),
-    ("Hard", ["hardstyle", "hardcore", "hard techno", "gabber"]),
-]
-
-
-def _broad_genres(genres) -> list[str]:
-    """Map an artist's subgenres to the broad families they belong to."""
-    found: list[str] = []
-    for g in (genres or []):
-        gl = str(g).lower()
-        for bucket, kws in _BROAD_RULES:
-            if any(k in gl for k in kws):
-                if bucket not in found:
-                    found.append(bucket)
-                break
-        else:
-            if "Other" not in found:
-                found.append("Other")
-    return found
+from scout.genre import broad_genres as _broad_genres  # noqa: E402
 
 
 # ── tab: Scout (genre → up to 6 → deep ranked analysis) ──────────────────────
@@ -365,6 +332,7 @@ def _render_browse(candidates: list[dict], taxonomy: dict,
     c = ranked[rows[0]]
     st.divider()
     _detail(c)
+    render_deal_radar(c, flat_by_id, ml, list(flat_by_id.values()))
 
     # ── one-click actions: jump straight into a validation or a comparison ─────
     aid = c["artist_id"]
@@ -479,8 +447,13 @@ def render_scout_page() -> None:
         by_name.setdefault(c["artist_name"], c)  # first wins on rare name clashes
     names = sorted(by_name)
 
-    tab_scout, tab_compare = st.tabs(["🔍 Scout", _compare_tab_label()])
+    tab_scout, tab_compare, tab_alerts, tab_health = st.tabs(
+        ["🔍 Scout", _compare_tab_label(), "⚡ Alerts", "📊 Model health"])
     with tab_scout:
         _render_scout_tab(candidates, taxonomy, by_name, names, flat_by_id, ml)
     with tab_compare:
         _render_compare_tab(by_name, names)
+    with tab_alerts:
+        render_alerts_tab(candidates)
+    with tab_health:
+        render_model_health(candidates)

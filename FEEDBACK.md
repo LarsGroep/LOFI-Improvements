@@ -100,3 +100,27 @@ fee, draw, and timing predictions with backtests, a real trajectory-comparable
 engine, and a feedback loop so the tool learns from every booking we make.
 Items 1–3 alone would move this from "useful second opinion" to "the first
 thing I open every morning."
+
+---
+
+## Implementation status (predict/ layer)
+
+The feedback above has been implemented as the `predict/` package + the
+Deal radar / Alerts / Model health UI. Where each item landed:
+
+| # | Ask | Status | Where |
+|---|---|---|---|
+| 1 | Fee/gage model + quote check + margin | ✅ Draw-adjusted comparable pricing (sub-linear elasticity), agent-quote fairness check, door-margin scenarios | `predict/fees.py`, Deal radar |
+| 2 | Calibrated draw, not an LLM estimate | ✅ Empirical quantiles over LOFI's own events, own-history shrinkage, leave-one-out backtest with coverage %; the LLM anchors to it | `predict/draw.py`, `agents/core.py` |
+| 3 | Booking-window model | ✅ Damped growth projection → fee drift in € per horizon + outgrow-the-room risk; verdicts book_now / act_fast / monitor / no_rush | `predict/window.py` |
+| 4 | Trajectory twins | ✅ z-scored trajectory-shape nearest neighbours over BOOKED artists, with real draw + gage outcomes attached. True "a year ago" matching sharpens as forecast snapshots accrue | `predict/twins.py` |
+| 5 | Backtest the forecast | ✅ Forecast logging + maturity-gated calibration report (direction hit rate, MAE, bias) in Model health; honest empty state until rows mature | `predict/backtest.py` |
+| 6 | Close the loop | ✅ Logistic fit on booked-vs-not → floored, normalised Scout-score weights; `ranking.rank_score` picks them up automatically; refit per season | `predict/rank_weights.py` |
+| 7 | Watchlist that pings | ✅ Threshold + delta spike rules, Slack-compatible webhook, cron CLI, in-app tab | `predict/watchlist.py` |
+| 8 | Routing & availability | ✅ EU/NL dates-in-window signal via Bandsintown (optional `BANDSINTOWN_APP_ID`; graceful without) | `predict/routing.py` |
+| 9 | Slot-level thinking | ✅ Draw quantiles vs `LOFI_CAPACITY` → headliner / co-headliner / support / opener / too-big, occupancy shown | `predict/slots.py` |
+
+Still open (needs data or a decision, not code): enabling the cron jobs so
+the forecast log and snapshots accrue; the NDA events zip + Airtable token in
+the environment so draw/fee models go live; and a season of booking outcomes
+before the learned weights beat the hand-tuned ones.

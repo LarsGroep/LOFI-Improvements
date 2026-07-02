@@ -73,3 +73,6 @@ lineup_recommender/data/processed/
 
 .vercel
 .env*
+
+# predict/ layer — venue-private state (watchlist, forecast log, learned weights)
+predict/data/

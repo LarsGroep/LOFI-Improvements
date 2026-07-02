@@ -209,4 +209,14 @@ def build_validation_view(artist_id: str, name: str, profile: dict,
         "n_comparable_events": len(comps),
         "ticket_estimate_allowed": has_own or len(comps) >= 3,
     }
+
+    # model layer (predict/): calibrated draw/fee/margin/window estimates the
+    # LLM must anchor to and explain — not re-derive. Graceful-empty sections
+    # carry method="insufficient"; never blocks the view on an error.
+    try:
+        from predict.deal import build_deal_sheet
+        view["model_estimates"] = build_deal_sheet(name, genres,
+                                                   profile=profile, ml=ml)
+    except Exception:
+        view["model_estimates"] = None
     return view

@@ -120,16 +120,32 @@ def build_candidates(flat_profiles: list[dict], ml_by_id: dict[str, dict],
 
 # ── Ranking + explanation ────────────────────────────────────────────────────
 
+def _weights() -> dict:
+    """Weights learned from LOFI's own booking outcomes when they exist
+    (predict/data/rank_weights.json, fitted via `python -m predict.rank_weights`),
+    otherwise the hand-tuned defaults."""
+    try:
+        from predict.rank_weights import learned_weights
+        w = learned_weights()
+        if w:
+            return w
+    except Exception:
+        pass
+    return {"future_potential": 0.35, "growth": 0.30,
+            "forecast_norm": 0.20, "momentum": 0.15}
+
+
 def rank_score(c: dict) -> float:
     """Blend trajectory signals with the XGBoost forecast. Future potential and
     growth lead; the forecast and current momentum round it out."""
     fc = c.get("forecast_90d")
     fc_norm = 50.0 if fc is None else max(0.0, min(100.0, float(fc)))
+    w = _weights()
     return (
-        0.35 * c["future_potential"]
-        + 0.30 * c["growth"]
-        + 0.20 * fc_norm
-        + 0.15 * c["momentum"]
+        w["future_potential"] * c["future_potential"]
+        + w["growth"] * c["growth"]
+        + w["forecast_norm"] * fc_norm
+        + w["momentum"] * c["momentum"]
     )
 
 
