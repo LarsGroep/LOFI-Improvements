@@ -36,6 +36,10 @@ class Context:
         self.shared = shared          # per-tick cache (e.g. loaded candidates)
         self._bb = blackboard
         self.records_emitted = 0
+        # reasoning agents increment these; the audit row picks them up
+        self.llm_calls = 0
+        self.tokens_in = 0
+        self.tokens_out = 0
 
     def emit(self, kind: str, payload: dict, artist_id: str | None = None,
              artist_name: str | None = None) -> int:
@@ -84,11 +88,17 @@ def run_agent(agent, blackboard, shared: dict | None = None,
     try:
         outcome = agent.run(ctx) or "ok"
         blackboard.run_finish(run_id, outcome,
+                              llm_calls=ctx.llm_calls,
+                              tokens_in=ctx.tokens_in,
+                              tokens_out=ctx.tokens_out,
                               records_emitted=ctx.records_emitted)
         return {"agent": manifest.name, "outcome": outcome, "error": None}
     except Exception as exc:  # noqa: BLE001 — the OS must survive any agent
         err = "".join(traceback.format_exception_only(exc)).strip()
         blackboard.run_finish(run_id, "error", error=err,
+                              llm_calls=ctx.llm_calls,
+                              tokens_in=ctx.tokens_in,
+                              tokens_out=ctx.tokens_out,
                               records_emitted=ctx.records_emitted)
         return {"agent": manifest.name, "outcome": "error", "error": err}
 
