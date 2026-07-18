@@ -1,0 +1,20 @@
+# Bare-metal alternative to docker compose (see deploy/README.md).
+# Install:
+#   sudo cp deploy/systemd/lofi-os.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now lofi-os
+[Unit]
+Description=LOFI Agentic OS kernel loop
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=lofi
+WorkingDirectory=/opt/lofi/app
+EnvironmentFile=/opt/lofi/app/.env
+ExecStart=/opt/lofi/venv/bin/python -m osk loop
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

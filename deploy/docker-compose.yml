@@ -1,0 +1,55 @@
+# LOFI on a VPS — the whole deployment.
+#
+#   cp .env.example .env      # fill in secrets (repo root)
+#   docker compose -f deploy/docker-compose.yml up -d --build
+#
+# Two services from one image:
+#   os     — the Agentic OS kernel loop (schedules + runs the agents)
+#   scout  — the Streamlit dashboard on :8501
+#
+# State that must survive restarts sits on named volumes:
+#   predict-data — watchlist, forecast log, learned weights (predict/data/)
+#   osk-data     — the SQLite blackboard (osk/data/), unless you switch to
+#                  LOFI_OS_BACKEND=supabase (deploy/migrations/).
+
+services:
+  os:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: lofi
+    command: python -m osk loop
+    env_file: ../.env
+    volumes:
+      - predict-data:/app/predict/data
+      - osk-data:/app/osk/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-m", "osk", "health"]
+      interval: 5m
+      timeout: 30s
+      retries: 3
+
+  scout:
+    image: lofi
+    depends_on:
+      - os
+    command: >
+      streamlit run scout/app.py
+      --server.port 8501 --server.address 0.0.0.0 --server.headless true
+    env_file: ../.env
+    ports:
+      - "8501:8501"
+    volumes:
+      - predict-data:/app/predict/data
+      - osk-data:/app/osk/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8501/_stcore/health"]
+      interval: 2m
+      timeout: 15s
+      retries: 3
+
+volumes:
+  predict-data:
+  osk-data:

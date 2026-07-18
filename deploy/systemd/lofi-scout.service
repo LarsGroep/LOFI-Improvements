@@ -1,0 +1,20 @@
+# The Streamlit dashboard as a service (pair with lofi-os.service).
+# Put a reverse proxy (caddy/nginx) with TLS + auth in front of :8501
+# before exposing it to the internet.
+[Unit]
+Description=LOFI Scout dashboard (Streamlit)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=lofi
+WorkingDirectory=/opt/lofi/app
+EnvironmentFile=/opt/lofi/app/.env
+ExecStart=/opt/lofi/venv/bin/streamlit run scout/app.py \
+  --server.port 8501 --server.address 127.0.0.1 --server.headless true
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

@@ -76,3 +76,6 @@ lineup_recommender/data/processed/
 
 # predict/ layer — venue-private state (watchlist, forecast log, learned weights)
 predict/data/
+
+# Agentic OS — blackboard + venue-private state
+osk/data/

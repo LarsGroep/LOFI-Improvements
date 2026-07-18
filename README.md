@@ -43,8 +43,11 @@ repo as a standalone tool, with its full git history.
 | `predict/` | The prediction layer: draw, fees, margin, booking window, twins, slots, watchlist, backtests, learned rank weights, routing |
 | `scoring/` | The five-scores engine + LOFI-feel taxonomy (shared lineage with the dashboard) |
 | `ml/` | XGBoost growth model: training script, bulk predict, `models/predictions.csv` |
-| `tests/` | Unit tests for the prediction layer (pure functions, synthetic data) |
+| `osk/` | The Agentic OS kernel: scheduler, blackboard, budgets, audit + the built-in agent roster |
+| `deploy/` | VPS deployment: Dockerfile, docker-compose, systemd units, Supabase migration |
+| `tests/` | Unit tests for the prediction layer + the OS kernel (pure functions, synthetic data) |
 | `docs/agent_design.md` | Design spec: compliance-by-design architecture |
+| `docs/agentic_os.md` | Design spec: the multi-agent OS (kernel, listeners, deliberation, dossiers) |
 
 ## Run it
 
@@ -67,15 +70,24 @@ mode**: rankings and filters work fully, AI buttons return mock output.
 - Airtable booking economics need `AIRTABLE_TOKEN` + `AIRTABLE_BASE_ID`
   (read-only scope).
 
-### Scheduled jobs (cron / GitHub Actions)
+### Scheduled jobs — the Agentic OS runs them
+
+The `osk/` kernel schedules, runs, and audits the maintenance jobs
+(forecast logging daily, watchlist spikes each morning, weekly weight
+refits + calibration reports). One process replaces the old crontab:
 
 ```bash
-python -m predict.backtest log      # daily: snapshot forecasts → calibration accrues
-python -m predict.backtest report   # the honest hit-rate report (also in the app)
-python -m predict.watchlist         # spike alerts → LOFI_ALERT_WEBHOOK (Slack-style)
-python -m predict.rank_weights      # refit Scout-score weights from booking outcomes
-python -m pytest tests/ -q          # the prediction layer's test suite
+python -m osk loop            # the long-running kernel (VPS entrypoint)
+python -m osk status          # agents, schedules, last run + outcome
+python -m osk run watchlist_sentinel   # force one agent now
+python -m osk feed --kind alert        # what the sentinel found
+python -m pytest tests/ -q    # prediction layer + kernel test suite
 ```
+
+Deploying on a VPS is two commands with docker compose (or systemd) — see
+`deploy/README.md`. The design behind the OS — listeners, detectors, the
+deliberation chamber — is `docs/agentic_os.md`; this repo ships Phase A.
+The `python -m predict.*` CLIs still work standalone if you prefer cron.
 
 Every model degrades gracefully: no Airtable → fee model says
 `insufficient`; no events zip → draw model says `insufficient`; the LLM is
