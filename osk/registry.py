@@ -36,9 +36,11 @@ class Registry:
 
 
 def default_registry() -> Registry:
-    """The shipped agent roster (Phase A: the four wrapped cron jobs)."""
+    """The shipped agent roster: Phase A maintenance agents + the Phase B
+    listeners. Later phases append here as they land."""
     from osk.agents_builtin import BUILTIN_AGENTS
+    from osk.listeners import LISTENER_AGENTS
     reg = Registry()
-    for agent in BUILTIN_AGENTS:
+    for agent in (*BUILTIN_AGENTS, *LISTENER_AGENTS):
         reg.register(agent())
     return reg

@@ -1,0 +1,44 @@
+# Curated listener sources — the LOFI-taxonomy watch list for Phase B.
+#
+# These are the "ears on the scene" targets (docs/agentic_os.md §3.1). The list
+# is deliberately small and hand-picked: a strong label's A&R decision is a free
+# expert vote, and a handful of tastemaker playlists/feeds beats a broad crawl.
+#
+# Override the whole file with LOFI_OS_SOURCES=/path/to/your.yaml — venues can
+# curate their own roster without touching code.
+
+# LOFI-adjacent electronic labels with public Bandcamp pages. label_radar diffs
+# each page's discography and emits a `label_signing` for a first-seen artist.
+labels:
+  - name: Dirtybird
+    bandcamp: https://dirtybird.bandcamp.com
+  - name: Anjunadeep
+    bandcamp: https://anjunadeep.bandcamp.com
+  - name: Kompakt
+    bandcamp: https://kompakt.bandcamp.com
+  - name: Hessle Audio
+    bandcamp: https://hessleaudio.bandcamp.com
+  - name: Ninja Tune
+    bandcamp: https://ninjatune.bandcamp.com
+
+# Editorial / tastemaker Spotify playlists. playlist_listener diffs each
+# tracklist run-over-run and emits `playlist_add` for newly-appearing artists.
+playlists:
+  - name: mint
+    id: 37i9dQZF1DX4dyzvuaRJ0n
+  - name: Housewerk
+    id: 37i9dQZF1DX6J5NfMJS675
+  - name: Tech House
+    id: 37i9dQZF1DX0AZUbfMHNsG
+  - name: Techno Bunker
+    id: 37i9dQZF1DX6bnzK9KPvrz
+
+# Scene-press RSS/Atom feeds. press_listener diffs item GUIDs and emits a
+# `press_mention` per new item (with a resolved artist when one is in the title).
+press_feeds:
+  - name: Resident Advisor
+    url: https://ra.co/xml/rss.xml
+  - name: Mixmag
+    url: https://mixmag.net/rss.xml
+  - name: DJ Mag
+    url: https://djmag.com/feed

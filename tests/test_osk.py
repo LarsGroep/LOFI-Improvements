@@ -119,10 +119,13 @@ def test_registry_validates():
         reg.register(object())              # no manifest
 
 
-def test_default_registry_ships_phase_a_roster():
+def test_default_registry_ships_the_roster():
     names = default_registry().names()
-    assert names == ["backtest_reporter", "forecast_logger",
-                     "rank_weights_refit", "watchlist_sentinel"]
+    for expected in ("backtest_reporter", "forecast_logger",
+                     "rank_weights_refit", "watchlist_sentinel",
+                     "soundcloud_listener", "playlist_listener",
+                     "label_radar", "press_listener"):
+        assert expected in names
 
 
 # ── orchestrator ─────────────────────────────────────────────────────────────
@@ -186,9 +189,11 @@ def test_tick_parks_over_budget_agents(tmp_path):
     bb = SQLiteBlackboard(tmp_path / "os.db")
     reg = Registry()
     reg.register(Greedy())
-    t0 = _t(2026, 7, 18, 8, 0)
+    # run_start stamps real wall-clock time, so anchor the fake `now` to it —
+    # a fixed date would drift out of agreement with the audit log.
+    t0 = dt.datetime.now(UTC)
     assert tick(reg, bb, now=t0)[0]["outcome"] == "ran"
-    res = tick(reg, bb, now=_t(2026, 7, 18, 8, 5))
+    res = tick(reg, bb, now=t0 + dt.timedelta(minutes=5))
     assert res[0]["outcome"] == "parked"
     assert "budget" in res[0]["error"]
     bb.close()
@@ -206,11 +211,12 @@ def test_kill_switch(tmp_path, monkeypatch):
 
 
 def test_builtin_agents_skip_gracefully_without_supabase(tmp_path, monkeypatch):
+    from osk.agents_builtin import BUILTIN_AGENTS
     monkeypatch.delenv("SUPABASE_URL", raising=False)
     monkeypatch.delenv("SUPABASE_KEY", raising=False)
     bb = SQLiteBlackboard(tmp_path / "os.db")
-    for agent in default_registry().all():
-        res = run_agent(agent, bb, trigger="cli")
+    for cls in BUILTIN_AGENTS:
+        res = run_agent(cls(), bb, trigger="cli")
         assert res["outcome"].startswith("skipped"), res
         assert res["error"] is None
     bb.close()
