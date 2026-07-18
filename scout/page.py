@@ -457,3 +457,72 @@ def render_scout_page() -> None:
         render_alerts_tab(candidates)
     with tab_health:
         render_model_health(candidates)
+        _render_leadtime()
+
+
+def _render_leadtime() -> None:
+    """Detection lead time + verdict calibration (docs/agentic_os.md §8) — the
+    same honest-empty idiom as render_model_health. Every data access is guarded:
+    no blackboard, no log, no Supabase → an st.info, never a crash."""
+    from predict.backtest import read_log
+    from predict.leadtime import (
+        _load_from_blackboard,
+        _load_outcomes,
+        established_bar,
+        evaluate_leadtime,
+        evaluate_verdicts,
+    )
+
+    st.subheader("Detection lead time", divider=True)
+    st.caption("Days between the OS promoting an artist and their Spotify "
+               "listeners crossing the established bar — the head start, or the "
+               "honest lack of one.")
+    try:
+        promotions, verdicts, note = _load_from_blackboard()
+    except Exception:
+        promotions, verdicts, note = None, None, "OS blackboard not reachable"
+    if note or promotions is None:
+        st.info("OS blackboard not reachable — promotions accrue once the "
+                "agentic layer is running.")
+        return
+
+    bar = established_bar()
+    lead = evaluate_leadtime(promotions, read_log(), bar)
+    if not lead.get("n_crossed"):
+        st.info(lead.get("note", "No matured promotions yet."))
+    else:
+        k = st.columns(3)
+        k[0].metric("Median days earlier", f"{lead['median_lead_days']:.0f}")
+        k[1].metric("Mean days earlier", f"{lead['mean_lead_days']:.0f}")
+        k[2].metric("Promotions crossed",
+                    f"{lead['n_crossed']}/{lead['n_promoted']}")
+        st.caption(f"Established bar: {bar:,.0f} monthly listeners.")
+        st.dataframe(pd.DataFrame([
+            {"Artist": a["artist_name"], "Promoted": a["promoted_at"],
+             "Crossed": a["crossed_at"], "Lead (days)": a["lead_days"]}
+            for a in lead["per_artist"]],
+        ), hide_index=True, use_container_width=True)
+
+    st.subheader("Verdict calibration", divider=True)
+    try:
+        outcomes = _load_outcomes()
+    except Exception:
+        outcomes = None
+    if outcomes is None:
+        st.info("Supabase not configured — no booking outcomes to calibrate "
+                "book_now / act_fast verdicts against yet.")
+        return
+    rep = evaluate_verdicts(verdicts or [], outcomes)
+    if not rep.get("n_mature"):
+        st.info(rep.get("note", "No mature verdicts yet."))
+    else:
+        k = st.columns(3)
+        k[0].metric("Mature verdicts", rep["n_mature"])
+        k[1].metric("Precision",
+                    "—" if rep["precision_pct"] is None
+                    else f"{rep['precision_pct']}%",
+                    help="of book_now/act_fast verdicts, the share that booked")
+        k[2].metric("Recall",
+                    "—" if rep["recall_pct"] is None
+                    else f"{rep['recall_pct']}%",
+                    help="of booked artists, the share the verdict flagged")

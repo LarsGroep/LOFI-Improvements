@@ -165,5 +165,17 @@ class ThresholdLearner:
                         f"F1={result['f1']:.2f}"),
             "observed_at": ctx.now.isoformat(timespec="seconds"),
         })
+        # Hand the value to the Sentinel. Its _threshold() reads
+        # ctx.state_get("promotion_threshold") → blackboard key
+        # "sentinel:promotion_threshold" (env LOFI_OS_PROMOTE_MIN still wins).
+        # We write that key directly so the retune takes effect on the
+        # Sentinel's next run without editing osk/sentinel.py; the emitted
+        # signal above is the audit trail the Feed console renders. Best-effort,
+        # namespaced to the Sentinel deliberately — this is a one-parameter
+        # handoff, not a general cross-agent write.
+        try:
+            ctx._bb.state_set("sentinel:promotion_threshold", t)
+        except Exception:
+            pass
         return (f"learned promotion threshold {t} from {n} promotions "
                 f"({positives} positive)")
