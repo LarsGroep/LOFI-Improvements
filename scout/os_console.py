@@ -26,6 +26,15 @@ _KIND_BADGE = {
 }
 _HEAT_WINDOW_DAYS = 90
 
+# verdict → (label, colour), aligned with scout/validation.py + predict/window.py
+_VERDICT_STYLE = {
+    "book_now": ("✅ Book now", "#1DB954"),
+    "act_fast": ("⚡ Act fast", "#f59e0b"),
+    "monitor": ("👀 Monitor", "#FF9900"),
+    "too_early": ("⏳ Too early", "#3b82f6"),
+    "not_a_fit": ("⛔ Not a fit", "#e05252"),
+}
+
 
 def _open_bb():
     """Read-only blackboard handle, or (None, error-string)."""
@@ -198,6 +207,144 @@ def _render_ops(bb) -> None:
         st.markdown(f"- **{m.name}** · `{sched}` · {summary}")
 
 
+# ── Chamber tab ───────────────────────────────────────────────────────────────
+
+def _group_debates(records) -> dict:
+    """Group brief + argument + verdict records by payload.debate_id."""
+    debates: dict = {}
+    for r in records:
+        did = (r.payload or {}).get("debate_id")
+        if not did:
+            continue
+        d = debates.setdefault(did, {"artist": None, "order": 0,
+                                     "brief": None, "args": [], "verdict": None})
+        if r.artist_name:
+            d["artist"] = r.artist_name
+        if (r.id or 0) > d["order"]:
+            d["order"] = r.id or 0
+        if r.kind == "verdict":
+            d["verdict"] = r.payload
+        elif r.kind == "brief":
+            d["brief"] = r.payload
+        else:
+            d["args"].append(r.payload or {})
+    return debates
+
+
+def _render_chamber(bb) -> None:
+    st.subheader("⚖️ Deliberation Chamber", divider=True)
+    st.caption("Structured adversarial review — Advocate, Skeptic, Judge — over "
+               "one shared, minimised evidence pack. Newest debates first.")
+
+    if st.button("🧠 Deliberate now"):
+        try:
+            from osk.blackboard import open_blackboard
+            from osk.chamber import Chamber
+            from osk.orchestrator import run_agent
+            wb = open_blackboard()
+            try:
+                res = run_agent(Chamber(), wb, trigger="ui")
+            finally:
+                try:
+                    wb.close()
+                except Exception:  # noqa: BLE001
+                    pass
+            st.success(f"Chamber ran: {res.get('outcome')}")
+        except Exception as exc:  # noqa: BLE001
+            st.error(f"Could not run the chamber: {exc}")
+        st.rerun()
+
+    try:
+        records = bb.read(kinds=["brief", "argument", "verdict"], limit=600)
+    except Exception as exc:  # noqa: BLE001
+        st.info(f"Chamber feed unavailable: {exc}")
+        return
+    debates = _group_debates(records)
+    if not debates:
+        st.info("No debates yet. Run the chamber with the button above, or wait "
+                "for the daily 06:30 deliberation.")
+        return
+
+    for _, d in sorted(debates.items(), key=lambda kv: kv[1]["order"],
+                       reverse=True):
+        v = d["verdict"] or {}
+        verdict = v.get("verdict") or "—"
+        label, color = _VERDICT_STYLE.get(verdict, (verdict, "#888888"))
+        conf = v.get("confidence")
+        title = f"{d['artist'] or '—'} — {label}"
+        if isinstance(conf, (int, float)):
+            title += f"  ·  {conf:.0%}"
+        with st.expander(title):
+            st.markdown(
+                f"<span style='background:{color};color:#fff;padding:2px 10px;"
+                f"border-radius:8px;font-weight:600'>{label}</span>",
+                unsafe_allow_html=True)
+            if v.get("summary"):
+                st.markdown(v["summary"])
+            diss = v.get("dissent") or {}
+            if diss.get("condition"):
+                st.caption(f"Dissent / re-hearing: {diss['condition']}")
+            for a in sorted(d["args"], key=lambda p: p.get("turn", 0)):
+                st.markdown(f"**{a.get('role', '?').title()}**"
+                            + (" · _mock_" if a.get("mode") == "mock" else ""))
+                claims = a.get("claims") or []
+                if not claims:
+                    st.caption("(no grounded claims survived)")
+                for c in claims:
+                    ptrs = ", ".join(c.get("evidence") or []) or "—"
+                    st.markdown(f"- {c.get('text', '')}  `{ptrs}`")
+
+
+# ── Dossiers tab ──────────────────────────────────────────────────────────────
+
+def _render_dossiers(bb) -> None:
+    st.subheader("📇 Artist dossiers", divider=True)
+    st.caption("The living, diffed per-artist dossier — written only when the "
+               "facts move materially.")
+    try:
+        records = bb.read(kinds=["dossier_update"], limit=600)
+    except Exception as exc:  # noqa: BLE001
+        st.info(f"Dossiers unavailable: {exc}")
+        return
+    if not records:
+        st.info("No dossiers yet. The curator writes one when an artist's facts "
+                "materially change (daily 07:00).")
+        return
+
+    by_artist: dict = {}
+    for r in records:                       # newest-first (id desc)
+        by_artist.setdefault(r.artist_name or "—", []).append(r)
+    pick = st.selectbox("Artist", sorted(by_artist))
+    revisions = by_artist[pick]
+    latest = revisions[0].payload or {}
+    facts = latest.get("facts") or {}
+
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Heat", facts.get("heat"))
+    c2.metric("Last verdict", facts.get("last_verdict") or "—")
+    c3.metric("Revision", latest.get("revision"))
+
+    if latest.get("narrative"):
+        st.markdown(latest["narrative"])
+    else:
+        st.caption("No narrative (preview mode — the facts and diff are the "
+                   "record; enable the AI for a written paragraph).")
+
+    counts = facts.get("signal_counts") or {}
+    if counts:
+        st.markdown("**Signals (90d):** "
+                    + ", ".join(f"{k}×{v}" for k, v in counts.items()))
+    if facts.get("first_seen"):
+        st.caption(f"First seen: {str(facts['first_seen'])[:16]}")
+
+    st.markdown("**Revision history**")
+    for r in revisions:
+        p = r.payload or {}
+        st.markdown(f"- rev **{p.get('revision')}** · {str(r.created_at)[:16]}")
+        for line in (p.get("diff") or []):
+            st.caption(f"　{line}")
+
+
 # ── entrypoint ────────────────────────────────────────────────────────────────
 
 def render_os_console() -> None:
@@ -210,9 +357,14 @@ def render_os_console() -> None:
                 "kernel's SQLite/Supabase backend; nothing to show yet.")
         return
     try:
-        feed_tab, ops_tab = st.tabs(["Feed", "Ops"])
+        feed_tab, chamber_tab, dossiers_tab, ops_tab = st.tabs(
+            ["Feed", "Chamber", "Dossiers", "Ops"])
         with feed_tab:
             _render_feed(bb)
+        with chamber_tab:
+            _render_chamber(bb)
+        with dossiers_tab:
+            _render_dossiers(bb)
         with ops_tab:
             _render_ops(bb)
     finally:

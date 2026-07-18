@@ -388,8 +388,8 @@ Same honesty standard as `predict/backtest.py`:
 | **A** | **✅ shipped** — kernel + blackboard + `agentic` schema (`osk/`, `deploy/`); the four existing cron jobs run as the first agents (zero LLM) | nothing — compliant now, mirrors Phase 1 of the original design |
 | **B** | **✅ shipped** — listeners (`osk/listeners/`): soundcloud, playlist, label_radar, press + signal time series + scrape cache (`osk/scrape.py`) | API keys per source |
 | **C** | **✅ shipped** — detectors (`osk/detectors/`: divergence, ignition, ladder, fee-lag, scene fns) + sentinel (`osk/sentinel.py`) + Agent OS console (`scout/os_console.py`) | A + B accruing ≥ a few weeks of signals |
-| **D** | Deliberation chamber + curator narratives + Chamber/Dossier UI | Phase-0 permission (existing gate), `agents/core.py` extended with the three role prompts |
-| **E** | Learned promotion thresholds + first detection-lead-time report | a season of Phase C data |
+| **D** | **✅ shipped** — deliberation chamber (`osk/chamber.py`) + dossier curator (`osk/curator.py`) + Chamber/Dossier tabs; all calls through `agents/core.complete()`, mock until the LLM gate opens | Phase-0 permission (`LOFI_LLM_ENABLED`) for live reasoning |
+| **E** | **✅ shipped** — learned promotion threshold (`osk/threshold_learner.py`) + detection-lead-time report (`predict/leadtime.py`, in Model health) | a season of accrued data before the numbers mean anything |
 
 Phases A–C are pure-Python and ship value (feed, signals, detectors) even if
 the LLM permission conversation stalls — the same de-risking that made

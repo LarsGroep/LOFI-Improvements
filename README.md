@@ -84,10 +84,22 @@ python -m osk feed --kind alert        # what the sentinel found
 python -m pytest tests/ -q    # prediction layer + kernel test suite
 ```
 
-Deploying on a VPS is two commands with docker compose (or systemd) — see
-`deploy/README.md`. The design behind the OS — listeners, detectors, the
-deliberation chamber — is `docs/agentic_os.md`; this repo ships Phase A.
-The `python -m predict.*` CLIs still work standalone if you prefer cron.
+Beyond maintenance, the full roadmap of `docs/agentic_os.md` is shipped —
+a 17-agent roster: **listeners** (SoundCloud velocity, Spotify playlist
+adds, Bandcamp label signings, scene-press RSS) feed a signal time series;
+**detectors** (cross-platform divergence, ignition combinatorics, venue
+ladder, fee-lag arbitrage) surface hidden-gem patterns; the **sentinel**
+turns decayed signal heat into promoted candidates and webhook alerts,
+with a threshold that **learns** from booking outcomes; and the
+**deliberation chamber** (Advocate / Skeptic / Judge, ≤5 LLM calls,
+claims struck without evidence pointers) argues promoted candidates into
+auditable verdicts while the **curator** maintains living dossiers — all
+LLM parts inert behind the `LOFI_LLM_ENABLED` gate, all visible in the
+app's **Agent OS** tab (Feed / Chamber / Dossiers / Ops). Detection lead
+time — did the OS surface artists earlier than plain ranking — reports in
+Model health. Deploying on a VPS is two commands with docker compose (or
+systemd) — see `deploy/README.md`. The `python -m predict.*` CLIs still
+work standalone if you prefer cron.
 
 Every model degrades gracefully: no Airtable → fee model says
 `insufficient`; no events zip → draw model says `insufficient`; the LLM is

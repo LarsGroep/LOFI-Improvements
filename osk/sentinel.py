@@ -137,6 +137,26 @@ class Sentinel:
         stored = ctx.state_get("promotion_threshold")
         return float(stored) if stored is not None else DEFAULT_PROMOTE_MIN
 
+    def _dissent_watches(self, ctx) -> list[dict]:
+        """Re-hearing watches derived from Judge dissent (Phase D §3.3): a
+        verdict's dissent block becomes a standing watch — artist, signal kind
+        and threshold — so the condition that would flip the verdict re-hears
+        the artist regardless of heat. Complements the state `watches` list."""
+        since = (ctx.now - _dt.timedelta(days=180)).isoformat(timespec="seconds")
+        out = []
+        for r in ctx.read(["verdict"], since=since, limit=1000):
+            d = (r.payload or {}).get("dissent") or {}
+            kind = d.get("kind")
+            if not kind:
+                continue
+            out.append({
+                "artist_name": r.artist_name,
+                "kind": kind,
+                "threshold": d.get("threshold"),
+                "reason": f"dissent: {d.get('reason') or d.get('condition') or 'watch'}",
+            })
+        return out
+
     def _in_cooldown(self, ctx, key: str) -> bool:
         from osk.blackboard import parse_ts
         last = parse_ts(ctx.state_get(f"promoted:{key}"))
@@ -168,7 +188,8 @@ class Sentinel:
         idmap = {v["key"]: (v["artist_id"], v["artist_name"]) for v in views}
         heat = compute_heat(views, ctx.now)
         threshold = self._threshold(ctx)
-        forced = match_watches(ctx.state_get("watches") or [], views)
+        watches = list(ctx.state_get("watches") or []) + self._dissent_watches(ctx)
+        forced = match_watches(watches, views)
 
         promoted = []
         for key in set(heat) | set(forced):

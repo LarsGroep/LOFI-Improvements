@@ -36,16 +36,18 @@ class Registry:
 
 
 def default_registry() -> Registry:
-    """The shipped agent roster: Phase A maintenance agents, Phase B
-    listeners, Phase C detectors + the sentinel, Phase E threshold learner.
-    Later phases append here."""
+    """The shipped agent roster, the full roadmap: Phase A maintenance
+    agents, Phase B listeners, Phase C detectors + the sentinel, Phase D
+    deliberation chamber + dossier curator, Phase E threshold learner."""
     from osk.agents_builtin import BUILTIN_AGENTS
+    from osk.chamber import Chamber
+    from osk.curator import DossierCurator
     from osk.detectors import DETECTOR_AGENTS
     from osk.listeners import LISTENER_AGENTS
     from osk.threshold_learner import ThresholdLearner
     from osk.sentinel import Sentinel
     reg = Registry()
     for agent in (*BUILTIN_AGENTS, *LISTENER_AGENTS, *DETECTOR_AGENTS,
-                  Sentinel, ThresholdLearner):
+                  Sentinel, Chamber, DossierCurator, ThresholdLearner):
         reg.register(agent())
     return reg
