@@ -22,7 +22,13 @@ try:
 except Exception:
     pass
 
+from scout.os_console import render_os_console  # noqa: E402
 from scout.page import render_scout_page  # noqa: E402
 
 st.set_page_config(page_title="LOFI Scout", layout="wide")
-render_scout_page()
+
+_scout_tab, _os_tab = st.tabs(["Scout", "Agent OS"])
+with _scout_tab:
+    render_scout_page()
+with _os_tab:
+    render_os_console()

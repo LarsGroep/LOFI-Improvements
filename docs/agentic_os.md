@@ -386,8 +386,8 @@ Same honesty standard as `predict/backtest.py`:
 | Phase | What ships | Depends on |
 |---|---|---|
 | **A** | **✅ shipped** — kernel + blackboard + `agentic` schema (`osk/`, `deploy/`); the four existing cron jobs run as the first agents (zero LLM) | nothing — compliant now, mirrors Phase 1 of the original design |
-| **B** | Listeners: soundcloud, playlist, label_radar, press + `signals` time series + scrape_cache | API keys per source |
-| **C** | Detectors (§5) + sentinel v2 + Feed UI + dossier facts (no narrative yet) | A + B accruing ≥ a few weeks of signals |
+| **B** | **✅ shipped** — listeners (`osk/listeners/`): soundcloud, playlist, label_radar, press + signal time series + scrape cache (`osk/scrape.py`) | API keys per source |
+| **C** | **✅ shipped** — detectors (`osk/detectors/`: divergence, ignition, ladder, fee-lag, scene fns) + sentinel (`osk/sentinel.py`) + Agent OS console (`scout/os_console.py`) | A + B accruing ≥ a few weeks of signals |
 | **D** | Deliberation chamber + curator narratives + Chamber/Dossier UI | Phase-0 permission (existing gate), `agents/core.py` extended with the three role prompts |
 | **E** | Learned promotion thresholds + first detection-lead-time report | a season of Phase C data |
 
