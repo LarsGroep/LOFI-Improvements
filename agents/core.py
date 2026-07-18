@@ -862,6 +862,40 @@ def chat_stream(artist_view: dict, history: list[dict], user_msg: str):
             yield text
 
 
+# ── Deliberation Chamber egress (Phase D) ────────────────────────────────────
+# The single generic completion the reasoning agents (osk/chamber.py,
+# osk/curator.py) build their calls on. Same compliance guard as everything
+# above: MOCK mode makes ZERO network calls and returns the caller's
+# deterministic `mock_text`, so the whole Deliberation protocol and the dossier
+# narrator are exercisable BEFORE US-hosting permission is granted. LIVE mode is
+# the one _create() egress; token usage is returned so the kernel can bill it to
+# the agent's audit row. Everything the model sees is already minimised by the
+# caller (osk.chamber.chamber_view), in the spirit of to_model_view() above.
+
+def complete(system: str, user: str, *, max_tokens: int = 2000,
+             mock_text: str = "") -> tuple[str, dict]:
+    """One completion through the single egress point → (text, usage).
+
+    MOCK (not is_live()): returns (mock_text, zero-usage) with NO network call —
+    the caller passes deterministic output it derived from its own data.
+    LIVE: routes through _create(); a refusal degrades to ("", usage) rather than
+    raising, so a debate turn never crashes the kernel. `usage` is
+    {"input_tokens", "output_tokens"} (both 0 in mock)."""
+    zero = {"input_tokens": 0, "output_tokens": 0}
+    if not is_live():
+        return mock_text, dict(zero)
+    resp = _create(max_tokens=max_tokens, system=system,
+                   messages=[{"role": "user", "content": user}])
+    u = getattr(resp, "usage", None)
+    usage = {"input_tokens": int(getattr(u, "input_tokens", 0) or 0),
+             "output_tokens": int(getattr(u, "output_tokens", 0) or 0)}
+    if getattr(resp, "stop_reason", None) == "refusal":
+        return "", usage
+    text = "".join(b.text for b in resp.content
+                   if getattr(b, "type", "") == "text")
+    return text, usage
+
+
 # ── CLI self-test (a safe way to verify your token + where inference runs) ───
 
 def _selftest() -> int:
